@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+        <title>洋館からの脱出</title>
+        <style>
+            :root {
+                --bg: #0b0b10;
+                --fg: #f2efe6;
+                --pn: rgba(14,12,20,.78);
+                box-sizing: border-box;
+                padding-top: env(safe-area-inset-top,0px);
+                padding-bottom: env(safe-area-inset-bottom,0px)
+            }
+
+            html {
+                height: 100%;
+                scroll-padding-top: env(safe-area-inset-top,0px)
+            }
+
+            body {
+                margin: 0;
+                height: 100%;
+                background: var(--bg);
+                color: var(--fg);
+                font: 14px/1.6 "Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+                overflow: hidden;
+                user-select: none;
+                -webkit-user-select: none
+            }
+
+            canvas {
+                position: fixed;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                touch-action: none;
+                display: block;
+                cursor: grab
+            }
+
+            .p {
+                position: fixed;
+                background: var(--pn);
+                border-radius: 6px;
+                padding: 6px 10px
+            }
+
+            #hud {
+                left: 8px;
+                top: calc(env(safe-area-inset-top,0px) + 8px);
+                pointer-events: none
+            }
+
+            #msg {
+                left: 50%;
+                bottom: calc(env(safe-area-inset-bottom,0px) + 40px);
+                transform: translateX(-50%);
+                max-width: 88vw;
+                opacity: 0;
+                transition: opacity .4s;
+                pointer-events: none;
+                text-align: center
+            }
+
+            #tip {
+                display: none;
+                pointer-events: none;
+                padding: 2px 8px;
+                font-size: 12px
+            }
+
+            #pad,#end {
+                display: none;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%,-50%);
+                padding: 16px;
+                text-align: center
+            }
+
+            #pd {
+                font: 700 28px monospace;
+                margin: 6px 0
+            }
+
+            #pk {
+                display: grid;
+                grid-template-columns: repeat(3,56px);
+                gap: 6px;
+                margin-bottom: 8px
+            }
+
+            button {
+                font: inherit;
+                background: #2c2a38;
+                color: var(--fg);
+                border: 1px solid #5a5668;
+                border-radius: 6px;
+                padding: 8px;
+                min-height: 44px
+            }
+
+            #mv {
+                position: fixed;
+                left: 12px;
+                bottom: calc(env(safe-area-inset-bottom,0px) + 12px);
+                display: none;
+                grid-template-columns: repeat(3,52px);
+                gap: 6px
+            }
+
+            #inv {
+                position: fixed;
+                right: 8px;
+                top: calc(env(safe-area-inset-top,0px) + 8px);
+                display: grid;
+                gap: 6px
+            }
+
+            .sl {
+                width: 64px;
+                height: 68px;
+                background: var(--pn);
+                border: 1px solid #5a5668;
+                border-radius: 6px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+                line-height: 1.2;
+                text-align: center
+            }
+
+            .sl svg {
+                width: 38px;
+                height: 38px
+            }
+
+            .sl.e {
+                opacity: .3
+            }
+
+            .nw {
+                animation: fl .7s 3
+            }
+
+            @keyframes fl {
+                50% {
+                    background: #7a6428
+                }
+            }
+
+            @media(pointer: coarse) {
+                #mv {
+                    display:grid
+                }
+
+                #msg {
+                    bottom: calc(env(safe-area-inset-bottom,0px) + 150px)
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="hud" class="p"></div>
+        <div id="msg" class="p"></div>
+        <div id="tip" class="p"></div>
+        <div id="inv"></div>
+        <div id="pad" class="p">
+            <div id="pt"></div>
+            <div id="pd"></div>
+            <div id="pk"></div>
+            <button onclick="closePad()">閉じる</button>
+        </div>
+        <div id="end" class="p"></div>
+        <div id="mv">
+            <i></i>
+            <button data-k="w">▲</button>
+            <i></i>
+            <button data-k="a">◀</button>
+            <button data-k="s">▼</button>
+            <button data-k="d">▶</button>
+        </div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+        <script>
+            const T = THREE
+              , $ = id => document.getElementById(id);
+            const sc = new T.Scene();
+            sc.background = new T.Color(0x05050a);
+            sc.fog = new T.Fog(0x05050a,8,30);
+            const cam = new T.PerspectiveCamera(70,innerWidth / innerHeight,.1,60);
+            cam.rotation.order = 'YXZ';
+            cam.position.set(0, 1.6, -1);
+            sc.add(cam);
+            const ren = new T.WebGLRenderer({
+                antialias: true
+            });
+            ren.setPixelRatio(Math.min(devicePixelRatio, 2));
+            ren.setSize(innerWidth, innerHeight, false);
+            document.body.prepend(ren.domElement);
+            sc.add(new T.AmbientLight(0xffffff,.28));
+            cam.add(new T.PointLight(0xfff2d0,.55,8,1));
+            const cols = []
+              , rc = new T.Raycaster();
+            function mk(g, x, y, z, c, o={}) {
+                const m = new T.Mesh(g,matFor(c, o));
+                m.position.set(x, y, z);
+                if (o.act)
+                    m.userData = {
+                        act: o.act,
+                        name: o.n || ''
+                    };
+                sc.add(m);
+                return m
+            }
+            function box(x, y, z, w, h, d, c, o={}) {
+                const g = new T.BoxGeometry(w,h,d);
+                if (TM[c])
+                    uvs(g, w, h, d, y, TM[c][1]);
+                const m = mk(g, x, y + h / 2, z, c, o);
+                if (o.s)
+                    cols.push([x - w / 2, x + w / 2, z - d / 2, z + d / 2]);
+                return m
+            }
+            const cyl = (x, y, z, r, h, c, o) => mk(new T.CylinderGeometry(r,r,h,16), x, y + h / 2, z, c, o);
+            const sph = (x, y, z, r, c, o) => mk(new T.SphereGeometry(r,16,12), x, y, z, c, o);
+            function tex(t, x, y, z, ry, w, h, fg, bg) {
+                const c = document.createElement('canvas');
+                c.width = 256;
+                c.height = Math.round(256 * h / w);
+                const g = c.getContext('2d');
+                g.fillStyle = bg || 'rgba(0,0,0,0)';
+                g.fillRect(0, 0, c.width, c.height);
+                g.fillStyle = fg || '#fff';
+                g.font = 'bold ' + c.height * .6 + 'px sans-serif';
+                g.textAlign = 'center';
+                g.textBaseline = 'middle';
+                g.fillText(t, c.width / 2, c.height / 2);
+                const m = new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({
+                    map: new T.CanvasTexture(c),
+                    transparent: true
+                }));
+                m.position.set(x, y, z);
+                m.rotation.y = ry;
+                m.raycast = () => {}
+                ;
+                sc.add(m)
+            }
+
+            const R = (g, c, x, y, w, h) => {
+                g.fillStyle = c;
+                g.fillRect(x, y, w, h)
+            }
+              , C = (g, x, y, r, c) => {
+                g.fillStyle = c;
+                g.beginPath();
+                g.arc(x, y, r, 0, 7);
+                g.fill()
+            }
+            ;
+            const P = (g, a, b, f) => {
+                const q = g.createLinearGradient(0, 0, 0, 128);
+                q.addColorStop(0, a);
+                q.addColorStop(1, b);
+                R(g, q, 0, 0, 128, 128);
+                f();
+                g.strokeStyle = '#caa24a';
+                g.lineWidth = 8;
+                g.strokeRect(0, 0, 128, 128)
+            }
+            ;
+            const TD = {
+                wall: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let x = 0; x < 128; x += 16)
+                        R(g, 'rgba(255,255,255,.08)', x, 0, 8, 128);
+                    R(g, 'rgba(0,0,0,.4)', 0, 96, 128, 32);
+                    R(g, 'rgba(255,255,255,.25)', 0, 94, 128, 3)
+                }
+                ,
+                plank: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let i = 0; i < 4; i++) {
+                        R(g, 'rgba(255,255,255,' + (.02 + .04 * (i % 3)) + ')', 0, i * 32, 128, 32);
+                        R(g, 'rgba(0,0,0,.55)', 0, i * 32, 128, 2);
+                        for (let k = 0; k < 5; k++)
+                            R(g, 'rgba(0,0,0,.13)', (k * 47 + i * 31) % 100, i * 32 + 6 + k * 5, 30, 1)
+                    }
+                    R(g, 'rgba(0,0,0,.45)', 37, 0, 2, 32);
+                    R(g, 'rgba(0,0,0,.45)', 90, 64, 2, 32)
+                }
+                ,
+                wood: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let y = 2; y < 128; y += 5 + y % 4)
+                        R(g, 'rgba(0,0,0,.16)', 0, y, 128, 1);
+                    R(g, 'rgba(255,255,255,.07)', 0, 0, 128, 3)
+                }
+                ,
+                tile: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let i = 0; i < 4; i++)
+                        for (let j = 0; j < 4; j++)
+                            if ((i + j) % 2)
+                                R(g, 'rgba(255,255,255,.1)', i * 32, j * 32, 32, 32);
+                    R(g, 'rgba(0,0,0,.5)', 0, 0, 128, 2);
+                    R(g, 'rgba(0,0,0,.5)', 0, 0, 2, 128);
+                    R(g, 'rgba(0,0,0,.35)', 0, 64, 128, 1);
+                    R(g, 'rgba(0,0,0,.35)', 64, 0, 1, 128)
+                }
+                ,
+                conc: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let i = 0; i < 160; i++)
+                        R(g, Math.random() < .5 ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.18)', Math.random() * 128, Math.random() * 128, 2, 2);
+                    R(g, 'rgba(0,0,0,.4)', 0, 0, 128, 2);
+                    R(g, 'rgba(0,0,0,.4)', 0, 0, 2, 128)
+                }
+                ,
+                carpet: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    g.strokeStyle = '#d8b45a';
+                    g.lineWidth = 4;
+                    g.strokeRect(8, 8, 112, 112);
+                    g.lineWidth = 2;
+                    g.beginPath();
+                    g.moveTo(64, 24);
+                    g.lineTo(104, 64);
+                    g.lineTo(64, 104);
+                    g.lineTo(24, 64);
+                    g.closePath();
+                    g.stroke()
+                }
+                ,
+                books: g => {
+                    R(g, '#3a2412', 0, 0, 128, 128);
+                    for (let r = 0; r < 4; r++) {
+                        const y = r * 32;
+                        let x = 4;
+                        for (let k = 0; x < 120; k++) {
+                            const w = 6 + (k * 7 + r) % 7
+                              , h = 20 + (k * 5 + r * 3) % 9;
+                            R(g, ['#8a2b2b', '#2b4f8a', '#2f6b3f', '#b8923a', '#5a2b6b', '#7a7a7a'][(k + r * 2) % 6], x, y + 30 - h, w, h);
+                            x += w + 1
+                        }
+                        R(g, '#6a4424', 0, y + 30, 128, 2)
+                    }
+                }
+                ,
+                dresser: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let i = 0; i < 3; i++) {
+                        const y = 6 + i * 40;
+                        R(g, 'rgba(0,0,0,.4)', 8, y, 112, 34);
+                        R(g, c, 10, y + 2, 108, 30);
+                        R(g, 'rgba(255,255,255,.1)', 10, y + 2, 108, 4);
+                        C(g, 64, y + 17, 5, '#d9a82c')
+                    }
+                }
+                ,
+                drawer: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    R(g, 'rgba(255,255,255,.1)', 0, 0, 128, 6);
+                    R(g, '#d9a82c', 40, 56, 48, 12)
+                }
+                ,
+                door: g => {
+                    R(g, '#5e3b22', 0, 0, 128, 128);
+                    for (let y = 3; y < 128; y += 6)
+                        R(g, 'rgba(0,0,0,.15)', 0, y, 128, 1);
+                    [[12, 10], [12, 70]].forEach( ([x,y]) => {
+                        R(g, 'rgba(0,0,0,.4)', x, y, 104, 48);
+                        R(g, '#704628', x + 4, y + 4, 96, 40)
+                    }
+                    );
+                    C(g, 108, 66, 6, '#d9a82c');
+                    R(g, '#111', 106, 70, 4, 8)
+                }
+                ,
+                crate: (g, c) => {
+                    R(g, c, 0, 0, 128, 128);
+                    for (let y = 0; y < 128; y += 32)
+                        R(g, 'rgba(0,0,0,.45)', 0, y, 128, 3);
+                    g.strokeStyle = 'rgba(255,255,255,.18)';
+                    g.lineWidth = 6;
+                    g.strokeRect(3, 3, 122, 122);
+                    g.beginPath();
+                    g.moveTo(8, 8);
+                    g.lineTo(120, 120);
+                    g.moveTo(120, 8);
+                    g.lineTo(8, 120);
+                    g.stroke()
+                }
+                ,
+                win: g => P(g, '#9fb8cc', '#e4edf3', () => {
+                    R(g, '#5a4a3a', 60, 0, 8, 128);
+                    R(g, '#5a4a3a', 0, 60, 128, 8)
+                }
+                ),
+                dawn: g => P(g, '#f7c58a', '#e97a6e', () => {
+                    C(g, 64, 92, 20, '#fff1b0');
+                    R(g, '#4b2f45', 0, 100, 128, 28)
+                }
+                ),
+                noon: g => P(g, '#5aa9ee', '#bfe3ff', () => {
+                    C(g, 92, 36, 16, '#fff7b0');
+                    R(g, '#fff', 20, 30, 30, 8);
+                    R(g, '#3f8a4a', 0, 98, 128, 30)
+                }
+                ),
+                night: g => P(g, '#0b1233', '#26356b', () => {
+                    C(g, 90, 38, 15, '#f4f1d0');
+                    C(g, 97, 34, 13, '#10183f');
+                    for (let i = 0; i < 14; i++)
+                        R(g, '#fff', (i * 37) % 120 + 4, (i * 23) % 70 + 6, 2, 2);
+                    R(g, '#0a0f26', 0, 102, 128, 26)
+                }
+                ),
+                brk: g => {
+                    R(g, '#3a3d42', 0, 0, 128, 128);
+                    R(g, '#d9b300', 0, 0, 128, 14);
+                    for (let i = 0; i < 4; i++) {
+                        R(g, '#111', 14 + i * 28, 30, 18, 70);
+                        R(g, i == 1 ? '#e33' : '#bbb', 16 + i * 28, i == 1 ? 34 : 64, 14, 32)
+                    }
+                }
+                ,
+                mshelf: g => {
+                    R(g, '#44484d', 0, 0, 128, 128);
+                    for (let i = 0; i < 4; i++) {
+                        R(g, '#8a8f96', 0, i * 42, 128, 4);
+                        for (let k = 0; k < 3; k++)
+                            R(g, ['#8a6a3b', '#6a7a8a', '#7a4a3a'][(i + k) % 3], 6 + k * 40 + i * 5, i * 42 - 24, 30, 20)
+                    }
+                }
+            };
+            const TM = {
+                0x7a5a3c: ['wall', 3.5],
+                0x3a2a1c: ['plank', 2],
+                0x5a4a6e: ['wall', 3.5],
+                0x2a2438: ['plank', 2],
+                0x4a6b6e: ['wall', 3.5],
+                0x22343a: ['tile', 2],
+                0x55555a: ['conc', 3.5],
+                0x1c1c20: ['conc', 2],
+                0x7a6a3a: ['wall', 3.5],
+                0x3a321c: ['plank', 2],
+                0x6b1f1f: ['carpet', 0],
+                0x5b3a22: ['wood', 1.5],
+                0x2e1a0c: ['drawer', 0],
+                0x4a2f1a: ['books', 0],
+                0x9bd0ff: ['win', 0],
+                0x6a5a4a: ['wood', 1.5],
+                0xcfd8dc: ['conc', 2],
+                0x7d7d8a: ['door', 0],
+                0xf2b36a: ['dawn', 0],
+                0x6ab7f2: ['noon', 0],
+                0x1b2a55: ['night', 0],
+                0x2a2a2a: ['brk', 0],
+                0x8a6a3b: ['crate', 0],
+                0x7a5a2b: ['crate', 0],
+                0x6a4a22: ['crate', 0],
+                0x555555: ['mshelf', 0],
+                0x888888: ['conc', 2],
+                0x5e3a1e: ['dresser', 0]
+            }
+              , TC = {};
+            function tx(t, c) {
+                const K = t[0] + c;
+                if (TC[K])
+                    return TC[K];
+                const W = t[1] ? 128 : 256
+                  , cv = document.createElement('canvas');
+                cv.width = cv.height = W;
+                const g = cv.getContext('2d');
+                g.scale(W / 128, W / 128);
+                TD[t[0]](g, '#' + c.toString(16).padStart(6, '0'));
+                const x = new T.CanvasTexture(cv);
+                x.wrapS = x.wrapT = T.RepeatWrapping;
+                x.anisotropy = 4;
+                return TC[K] = x
+            }
+            function matFor(c, o) {
+                const t = TM[c]
+                  , k = t ? {
+                    map: tx(t, c)
+                } : {
+                    color: c
+                };
+                return o.b ? new T.MeshBasicMaterial(k) : new T.MeshPhongMaterial({
+                    ...k,
+                    shininess: 8,
+                    specular: 0x111111
+                })
+            }
+            function uvs(g, w, h, d, y0, s) {
+                if (!s)
+                    return;
+                const u = g.attributes.uv
+                  , D = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+                for (let f = 0; f < 6; f++)
+                    for (let v = 0; v < 4; v++) {
+                        const i = f * 4 + v
+                          , sd = f < 2 || f > 3;
+                        u.setXY(i, u.getX(i) * D[f][0] / s, (u.getY(i) * D[f][1] + (sd ? y0 : 0)) / s)
+                    }
+            }
+            const IC = {
+                '小さな鍵': '<circle cx="15" cy="15" r="7" fill="none" stroke="#d5dde2" stroke-width="4"/><path d="M20 20L40 40M33 33l6-6M28 28l5-5" stroke="#d5dde2" stroke-width="4" stroke-linecap="round" fill="none"/>',
+                '真鍮の鍵': '<circle cx="14" cy="14" r="9" fill="#d9a82c"/><circle cx="14" cy="14" r="4" fill="#222"/><path d="M21 21L42 42M34 34l7-7M29 29l6-6" stroke="#d9a82c" stroke-width="5" stroke-linecap="round" fill="none"/>',
+                '大きな歯車': '<circle cx="24" cy="24" r="15" fill="none" stroke="#b08a4a" stroke-width="7" stroke-dasharray="6.5 6.5"/><circle cx="24" cy="24" r="13" fill="#b08a4a"/><circle cx="24" cy="24" r="5" fill="#222"/>',
+                '小さな歯車': '<circle cx="24" cy="24" r="9" fill="none" stroke="#9aa5ad" stroke-width="6" stroke-dasharray="4.5 4.5"/><circle cx="24" cy="24" r="8" fill="#9aa5ad"/><circle cx="24" cy="24" r="3" fill="#222"/>'
+            }
+              , DS = {
+                '小さな鍵': '小さな引き出し用の鍵。',
+                '真鍮の鍵': '書斎の扉の鍵。',
+                '大きな歯車': '扉の装置にはめる歯車。',
+                '小さな歯車': '扉の装置にはめる歯車。'
+            };
+            function inv() {
+                $('inv').innerHTML = [0, 1, 2, 3].map(i => {
+                    const n = S.inv[i];
+                    return n ? '<div class="sl' + (i == S.inv.length - 1 ? ' nw' : '') + '" data-i="' + i + '"><svg viewBox="0 0 48 48">' + IC[n] + '</svg>' + n + '</div>' : '<div class="sl e"></div>'
+                }
+                ).join('')
+            }
+            $('inv').onclick = e => {
+                const s = e.target.closest('[data-i]');
+                if (s) {
+                    const n = S.inv[s.dataset.i];
+                    say(n + '：' + DS[n])
+                }
+            }
+            ;
+            const S = {
+                inv: [],
+                f: {},
+                dg: [],
+                q: [],
+                t0: performance.now()
+            }
+              , DG = [6, 2, 0, 3]
+              , NM = ['書斎', 'ギャラリー', '実験室', '倉庫', '出口の間']
+              , doors = [];
+            const has = n => S.inv.includes(n);
+            let tm, over = 0;
+            function say(t) {
+                const m = $('msg');
+                m.textContent = t;
+                m.style.opacity = 1;
+                clearTimeout(tm);
+                tm = setTimeout( () => m.style.opacity = 0, 5500)
+            }
+            function give(n) {
+                S.inv.push(n);
+                inv()
+            }
+            let rm = 0;
+            function hud() {
+                $('hud').innerHTML = '<b>' + NM[rm] + '</b><br>刻印：' + [0, 1, 2, 3].map(i => S.dg[i] ?? '?').join(' ')
+            }
+            function openDoor(i) {
+                const d = doors[i];
+                if (d.o)
+                    return;
+                d.o = 1;
+                d.m.userData = {};
+                if (i < 4) {
+                    S.dg[i] = DG[i];
+                    say('扉が開いた！ 扉の裏に数字が刻まれている：「' + DG[i] + '」');
+                    hud()
+                } else {
+                    say('扉が開く…外の光が差し込んできた！');
+                    setTimeout(win, 1800)
+                }
+            }
+            function room(i, wc, fc, lit, da) {
+                const z0 = -9 * i
+                  , z1 = z0 - 8
+                  , zc = z0 - 4
+                  , zs = z1 - .5;
+                box(0, -.1, zc, 8, .1, 8, fc);
+                box(0, 3.4, zc, 8, .1, 8, 0x222226);
+                box(-4.2, 0, z0 - 4.5, .4, 3.5, 9, wc);
+                box(4.2, 0, z0 - 4.5, .4, 3.5, 9, wc);
+                box(-2.7, 0, zs, 3, 3.5, 1, wc);
+                box(2.7, 0, zs, 3, 3.5, 1, wc);
+                box(0, 2.6, zs, 2.4, .9, 1, wc);
+                if (i == 0)
+                    box(0, 0, z0 + .2, 8.8, 3.5, .4, wc);
+                if (i == 4)
+                    box(0, 0, z1 - .9, 2.4, 2.6, .05, 0xfffbe8, {
+                        b: 1
+                    });
+                doors[i] = {
+                    o: 0,
+                    m: box(0, 0, zs, 2.4, 2.6, .3, 0x7d7d8a, {
+                        act: da,
+                        n: '扉'
+                    })
+                };
+                const L = new T.PointLight(0xffe2b0,lit ? .95 : 0,13,1);
+                L.position.set(0, 3, zc);
+                sc.add(L);
+                return L
+            }
+
+            /* 1 書斎 */
+            const plant = () => {
+                if (S.f.k1)
+                    return say('ただの植木鉢だ。');
+                S.f.k1 = 1;
+                give('小さな鍵');
+                say('土の中に小さな鍵が埋まっていた！')
+            }
+            ;
+            const drawer = () => {
+                if (S.f.k2)
+                    return say('引き出しは空だ。');
+                if (!has('小さな鍵'))
+                    return say('引き出しには鍵がかかっている。');
+                S.f.k2 = 1;
+                give('真鍮の鍵');
+                say('小さな鍵で開いた！ 真鍮の鍵を手に入れた。')
+            }
+            ;
+            room(0, 0x7a5a3c, 0x3a2a1c, 1, () => has('真鍮の鍵') ? openDoor(0) : say('頑丈な扉だ。鍵が必要そうだ。'));
+            box(0, .01, -4, 4, .02, 5, 0x6b1f1f);
+            box(-2.2, 0, -6.4, 2.4, .8, 1.2, 0x5b3a22, {
+                s: 1,
+                n: '机',
+                act: () => say('立派な机だ。引き出しがある。')
+            });
+            box(-2.2, .35, -5.78, 1, .3, .06, 0x2e1a0c, {
+                n: '引き出し',
+                act: drawer
+            });
+            box(3.55, 0, -3, .8, 2.4, 3, 0x4a2f1a, {
+                s: 1,
+                n: '本棚',
+                act: () => say('古い本が並んでいる。背表紙：『扉の裏に注目せよ』')
+            });
+            cyl(-3.2, 0, -1.6, .35, .6, 0xb5651d, {
+                n: '植木鉢',
+                act: plant
+            });
+            sph(-3.2, .95, -1.6, .5, 0x2e7d32, {
+                n: '植木鉢',
+                act: plant
+            });
+            box(-3.95, 1.2, -3.5, .1, 1.2, 1.6, 0x9bd0ff, {
+                b: 1,
+                n: '窓',
+                act: () => say('外は深い霧で何も見えない。')
+            });
+            box(2.6, 0, -7.65, 1.8, 1.7, .7, 0x5e3a1e, {
+                s: 1,
+                n: 'タンス',
+                act: () => say('古い服ばかり。ポケットにメモ：「大事な物は、緑の中に隠した」')
+            });
+
+            /* 2 ギャラリー */
+            room(1, 0x5a4a6e, 0x2a2438, 1, () => S.f.c2 ? 0 : askCode(3, '3桁の数字錠', c => c === '395' ? openDoor(1) : say('ガチャ…。違うようだ。')));
+            box(0, 0, -11, 2, .8, 1, 0x6a5a4a, {
+                s: 1,
+                n: 'テーブル',
+                act: () => say('メモ：「一日の流れの通りに、数字を並べよ。朝、昼、夜。」')
+            });
+            box(-3, 0, -14, 1.2, .5, 2.5, 0x3a2a4a, {
+                s: 1
+            });
+            [['朝', -15, 0xf2b36a, 3], ['昼', -13, 0x6ab7f2, 9], ['夜', -11, 0x1b2a55, 5]].forEach( ([t,z,c,d]) => {
+                box(3.95, 1, z, .1, 1.2, 1.4, c, {
+                    n: '絵画',
+                    act: () => say('『' + t + '』の額縁の裏に「' + d + '」と書かれている。')
+                });
+                tex(t, 3.88, .8, z, -Math.PI / 2, .5, .25)
+            }
+            );
+
+            /* 3 実験室 */
+            room(2, 0x4a6b6e, 0x22343a, 1, () => say('電子ロックされている。壁のパネルが関係していそうだ。'));
+            box(-2.7, 1.05, -25.8, 2.2, .08, .35, 0x333333);
+            [0x2f6fe0, 0xe03030, 0x2fb04a, 0xe8d030].forEach( (c, k) => cyl(-3.4 + k * .5, 1.1, -25.8, .12, .5, c, {
+                n: '試験管',
+                act: () => say('色付きの液体が入った試験管だ。')
+            }));
+            box(2.7, .8, -25.95, 1.8, .7, .1, 0x222a2e);
+            const press = id => {
+                if (S.f.p3)
+                    return;
+                S.q.push(id);
+                const n = S.q.length;
+                if (S.q[n - 1] !== 'bryg'[n - 1]) {
+                    S.q = [];
+                    say('ブザーが鳴った…最初からやり直しだ。')
+                } else if (n == 4) {
+                    S.f.p3 = 1;
+                    say('ピッ！ ロックが外れる音がした。');
+                    openDoor(2)
+                } else
+                    say('ピッ（' + n + '/4）')
+            }
+            ;
+            [['r', 0xe03030, 2.05], ['y', 0xe8d030, 2.5], ['b', 0x2f6fe0, 2.95], ['g', 0x2fb04a, 3.4]].forEach( ([id,c,x]) => box(x, 1, -25.85, .3, .3, .1, c, {
+                b: 1,
+                n: 'ボタン',
+                act: () => press(id)
+            }));
+            box(-1, 0, -21.5, 2, .8, 1, 0xcfd8dc, {
+                s: 1,
+                n: '実験台',
+                act: () => say('実験メモ：「試験管の並びを左から順に、パネルへ入力せよ」')
+            });
+            cyl(-1.6, .8, -21.5, .12, .3, 0x88ddff, {
+                b: 1
+            });
+            cyl(-.5, .8, -21.5, .12, .3, 0xffaadd, {
+                b: 1
+            });
+
+            /* 4 倉庫（暗い） */
+            const L4 = room(3, 0x55555a, 0x1c1c20, 0, () => has('大きな歯車') && has('小さな歯車') ? (say('2つの歯車をはめ込むと、扉の装置が動き出した！'),
+            openDoor(3)) : say('扉に歯車をはめる装置がある。歯車が2つ必要そうだ。'));
+            const lit = f => S.f.pw ? f() : say('暗くてよく見えない…。どこかに電源があるはずだ。');
+            const power = () => {
+                if (S.f.pw)
+                    return say('もう電気は点いている。');
+                S.f.pw = 1;
+                L4.intensity = 1;
+                say('ブレーカーを上げた！ 部屋が明るくなった。')
+            }
+            ;
+            box(3.9, 1.2, -29, .15, .9, .6, 0x2a2a2a, {
+                n: 'ブレーカー',
+                act: power
+            });
+            box(3.8, 1.9, -29, .08, .12, .12, 0xff2020, {
+                b: 1,
+                n: 'ブレーカー',
+                act: power
+            });
+            box(-2.6, 0, -29.5, 1.3, 1, 1.3, 0x8a6a3b, {
+                s: 1,
+                n: '木箱',
+                act: () => lit( () => {
+                    if (S.f.g1)
+                        return say('空っぽだ。');
+                    S.f.g1 = 1;
+                    give('大きな歯車');
+                    say('木箱の中に大きな歯車があった！')
+                }
+                )
+            });
+            box(-3.7, 0, -33, .6, 2, 3, 0x555555, {
+                s: 1,
+                n: '棚',
+                act: () => lit( () => {
+                    if (S.f.g2)
+                        return say('もう何もない。');
+                    S.f.g2 = 1;
+                    give('小さな歯車');
+                    say('棚の奥に小さな歯車が転がっていた！')
+                }
+                )
+            });
+            box(2.6, 0, -32, 1.2, 1.2, 1.2, 0x7a5a2b, {
+                s: 1,
+                n: '木箱',
+                act: () => lit( () => say('中身はガラクタばかりだ。'))
+            });
+            box(1.2, 0, -33.8, 1, .8, 1, 0x6a4a22, {
+                s: 1
+            });
+
+            /* 5 出口の間 */
+            room(4, 0x7a6a3a, 0x3a321c, 1, () => askCode(4, '4桁の暗証番号', c => c === DG.join('') ? openDoor(4) : say('ブーッ。違うようだ。')));
+            tex('EXIT', 0, 3.05, -43.97, 0, 1.2, .4, '#ffe9a8', '#8a1c1c');
+            box(-2.8, 1.2, -43.9, 1.6, .7, .08, 0x222222, {
+                n: '銘板',
+                act: () => say('銘板：「歩んだ扉の裏の数字を、順に押せ」')
+            });
+            box(0, 0, -40, 1, .8, 1, 0x888888, {
+                s: 1
+            });
+            sph(0, 1.15, -40, .25, 0xffe28a, {
+                b: 1,
+                n: '宝玉',
+                act: () => say('光る宝玉。ただの飾りのようだ。')
+            });
+
+            /* 入力 */
+            let padOpen = 0, buf = '', pcb, pn = 0;
+            const draw = () => $('pd').textContent = (buf + '_'.repeat(pn - buf.length)).split('').join(' ');
+            ['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'OK'].forEach(k => {
+                const b = document.createElement('button');
+                b.textContent = k;
+                b.onclick = () => {
+                    if (k === '←')
+                        buf = buf.slice(0, -1);
+                    else if (k === 'OK') {
+                        if (buf.length === pn) {
+                            const f = pcb
+                              , v = buf;
+                            closePad();
+                            f(v)
+                        }
+                        return
+                    } else if (buf.length < pn)
+                        buf += k;
+                    draw()
+                }
+                ;
+                $('pk').appendChild(b)
+            }
+            );
+            function askCode(n, t, cb) {
+                pn = n;
+                buf = '';
+                pcb = cb;
+                padOpen = 1;
+                for (const k in K)
+                    K[k] = 0;
+                $('pt').textContent = t;
+                draw();
+                $('pad').style.display = 'block'
+            }
+            function closePad() {
+                padOpen = 0;
+                $('pad').style.display = 'none'
+            }
+            function win() {
+                over = 1;
+                const s = Math.round((performance.now() - S.t0) / 1000);
+                $('end').innerHTML = '<h2>脱出成功！</h2><p>クリアタイム ' + Math.floor(s / 60) + '分' + s % 60 + '秒</p><button onclick="location.reload()">もう一度遊ぶ</button>';
+                $('end').style.display = 'block'
+            }
+            const K = {};
+            let yaw = 0
+              , pit = 0
+              , dn = null;
+            addEventListener('keydown', e => {
+                if (!padOpen)
+                    K[e.key.toLowerCase()] = 1
+            }
+            );
+            addEventListener('keyup', e => K[e.key.toLowerCase()] = 0);
+            document.querySelectorAll('#mv button').forEach(b => {
+                const k = b.dataset.k;
+                b.onpointerdown = e => {
+                    e.preventDefault();
+                    K[k] = 1
+                }
+                ;
+                b.onpointerup = b.onpointerleave = b.onpointercancel = () => K[k] = 0
+            }
+            );
+            function pick(x, y) {
+                rc.setFromCamera({
+                    x: x / innerWidth * 2 - 1,
+                    y: -(y / innerHeight) * 2 + 1
+                }, cam);
+                const h = rc.intersectObjects(sc.children, true)[0];
+                return h && h.object.userData.act ? h : null
+            }
+            const cv = ren.domElement;
+            cv.addEventListener('pointerdown', e => {
+                cv.setPointerCapture(e.pointerId);
+                dn = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    m: 0,
+                    t: Date.now()
+                }
+            }
+            );
+            cv.addEventListener('pointermove', e => {
+                if (dn) {
+                    const dx = e.clientX - dn.x
+                      , dy = e.clientY - dn.y;
+                    dn.m += Math.abs(dx) + Math.abs(dy);
+                    dn.x = e.clientX;
+                    dn.y = e.clientY;
+                    yaw -= dx * .005;
+                    pit = Math.max(-1.2, Math.min(1.2, pit - dy * .005))
+                } else {
+                    const h = pick(e.clientX, e.clientY)
+                      , t = $('tip');
+                    cv.style.cursor = h ? 'pointer' : 'grab';
+                    t.style.display = h && h.object.userData.name ? 'block' : 'none';
+                    if (h) {
+                        t.textContent = h.object.userData.name;
+                        t.style.left = e.clientX + 14 + 'px';
+                        t.style.top = e.clientY + 14 + 'px'
+                    }
+                }
+            }
+            );
+            cv.addEventListener('pointerup', e => {
+                if (dn && dn.m < 8 && Date.now() - dn.t < 500 && !over) {
+                    const h = pick(e.clientX, e.clientY);
+                    if (h) {
+                        if (h.distance > 4.5)
+                            say('もう少し近づこう。');
+                        else
+                            h.object.userData.act()
+                    }
+                }
+                dn = null
+            }
+            );
+            addEventListener('resize', () => {
+                cam.aspect = innerWidth / innerHeight;
+                cam.updateProjectionMatrix();
+                ren.setSize(innerWidth, innerHeight, false)
+            }
+            );
+            function ok(x, z) {
+                const m = .35;
+                let r = 0;
+                for (let i = 0; i < 5; i++) {
+                    const z0 = -9 * i
+                      , z1 = z0 - 8;
+                    if (x > -4 + m && x < 4 - m && z < z0 - m && z > z1 + m)
+                        r = 1;
+                    if (i < 4 && doors[i].o && Math.abs(x) < .9 && z < z1 + 2 * m && z > z1 - 1 - 2 * m)
+                        r = 1
+                }
+                return r && !cols.some(c => x > c[0] - .3 && x < c[1] + .3 && z > c[2] - .3 && z < c[3] + .3)
+            }
+            let last = performance.now();
+            function loop(t) {
+                requestAnimationFrame(loop);
+                const dt = Math.min(.05, (t - last) / 1000);
+                last = t;
+                if (!over) {
+                    if (K.arrowleft)
+                        yaw += dt * 1.8;
+                    if (K.arrowright)
+                        yaw -= dt * 1.8;
+                    const f = (K.w || K.arrowup ? 1 : 0) - (K.s || K.arrowdown ? 1 : 0)
+                      , r = (K.d ? 1 : 0) - (K.a ? 1 : 0);
+                    if (f || r) {
+                        const sx = Math.sin(yaw)
+                          , cx = Math.cos(yaw)
+                          , vx = (-sx * f + cx * r) * 3.2 * dt
+                          , vz = (-cx * f - sx * r) * 3.2 * dt
+                          , p = cam.position;
+                        if (ok(p.x + vx, p.z))
+                            p.x += vx;
+                        if (ok(p.x, p.z + vz))
+                            p.z += vz
+                    }
+                }
+                cam.rotation.set(pit, yaw, 0);
+                doors.forEach(d => {
+                    if (d.o && d.m.position.y < 3.9)
+                        d.m.position.y = Math.min(3.9, d.m.position.y + dt * 2)
+                }
+                );
+                const n = Math.min(4, Math.max(0, Math.floor(-cam.position.z / 9)));
+                if (n !== rm) {
+                    rm = n;
+                    hud()
+                }
+                ren.render(sc, cam)
+            }
+            hud();
+            inv();
+            say('ドラッグで見回し、WASD／矢印キーで移動。気になる物をクリック！');
+            requestAnimationFrame(loop);
+        </script>
+    </body>
+</html>
