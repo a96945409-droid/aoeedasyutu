@@ -1,977 +1,177 @@
 <!DOCTYPE html>
-<html lang="ja">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-        <title>洋館からの脱出</title>
-        <style>
-            :root {
-                --bg: #0b0b10;
-                --fg: #f2efe6;
-                --pn: rgba(14,12,20,.78);
-                box-sizing: border-box;
-                padding-top: env(safe-area-inset-top,0px);
-                padding-bottom: env(safe-area-inset-bottom,0px)
-            }
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="./style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pen</title>
+  </head>
+  <body>
 
-            html {
-                height: 100%;
-                scroll-padding-top: env(safe-area-inset-top,0px)
-            }
-
-            body {
-                margin: 0;
-                height: 100%;
-                background: var(--bg);
-                color: var(--fg);
-                font: 14px/1.6 "Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
-                overflow: hidden;
-                user-select: none;
-                -webkit-user-select: none
-            }
-
-            canvas {
-                position: fixed;
-                inset: 0;
-                width: 100%;
-                height: 100%;
-                touch-action: none;
-                display: block;
-                cursor: grab
-            }
-
-            .p {
-                position: fixed;
-                background: var(--pn);
-                border-radius: 6px;
-                padding: 6px 10px
-            }
-
-            #hud {
-                left: 8px;
-                top: calc(env(safe-area-inset-top,0px) + 8px);
-                pointer-events: none
-            }
-
-            #msg {
-                left: 50%;
-                bottom: calc(env(safe-area-inset-bottom,0px) + 40px);
-                transform: translateX(-50%);
-                max-width: 88vw;
-                opacity: 0;
-                transition: opacity .4s;
-                pointer-events: none;
-                text-align: center
-            }
-
-            #tip {
-                display: none;
-                pointer-events: none;
-                padding: 2px 8px;
-                font-size: 12px
-            }
-
-            #pad,#end {
-                display: none;
-                left: 50%;
-                top: 50%;
-                transform: translate(-50%,-50%);
-                padding: 16px;
-                text-align: center
-            }
-
-            #pd {
-                font: 700 28px monospace;
-                margin: 6px 0
-            }
-
-            #pk {
-                display: grid;
-                grid-template-columns: repeat(3,56px);
-                gap: 6px;
-                margin-bottom: 8px
-            }
-
-            button {
-                font: inherit;
-                background: #2c2a38;
-                color: var(--fg);
-                border: 1px solid #5a5668;
-                border-radius: 6px;
-                padding: 8px;
-                min-height: 44px
-            }
-
-            #mv {
-                position: fixed;
-                left: 12px;
-                bottom: calc(env(safe-area-inset-bottom,0px) + 12px);
-                display: none;
-                grid-template-columns: repeat(3,52px);
-                gap: 6px
-            }
-
-            #inv {
-                position: fixed;
-                right: 8px;
-                top: calc(env(safe-area-inset-top,0px) + 8px);
-                display: grid;
-                gap: 6px
-            }
-
-            .sl {
-                width: 64px;
-                height: 68px;
-                background: var(--pn);
-                border: 1px solid #5a5668;
-                border-radius: 6px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                font-size: 10px;
-                line-height: 1.2;
-                text-align: center
-            }
-
-            .sl svg {
-                width: 38px;
-                height: 38px
-            }
-
-            .sl.e {
-                opacity: .3
-            }
-
-            .nw {
-                animation: fl .7s 3
-            }
-
-            @keyframes fl {
-                50% {
-                    background: #7a6428
-                }
-            }
-
-            @media(pointer: coarse) {
-                #mv {
-                    display:grid
-                }
-
-                #msg {
-                    bottom: calc(env(safe-area-inset-bottom,0px) + 150px)
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div id="hud" class="p"></div>
-        <div id="msg" class="p"></div>
-        <div id="tip" class="p"></div>
-        <div id="inv"></div>
-        <div id="pad" class="p">
-            <div id="pt"></div>
-            <div id="pd"></div>
-            <div id="pk"></div>
-            <button onclick="closePad()">閉じる</button>
-        </div>
-        <div id="end" class="p"></div>
-        <div id="mv">
-            <i></i>
-            <button data-k="w">▲</button>
-            <i></i>
-            <button data-k="a">◀</button>
-            <button data-k="s">▼</button>
-            <button data-k="d">▶</button>
-        </div>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-        <script>
-            const T = THREE
-              , $ = id => document.getElementById(id);
-            const sc = new T.Scene();
-            sc.background = new T.Color(0x05050a);
-            sc.fog = new T.Fog(0x05050a,8,30);
-            const cam = new T.PerspectiveCamera(70,innerWidth / innerHeight,.1,60);
-            cam.rotation.order = 'YXZ';
-            cam.position.set(0, 1.6, -1);
-            sc.add(cam);
-            const ren = new T.WebGLRenderer({
-                antialias: true
-            });
-            ren.setPixelRatio(Math.min(devicePixelRatio, 2));
-            ren.setSize(innerWidth, innerHeight, false);
-            document.body.prepend(ren.domElement);
-            sc.add(new T.AmbientLight(0xffffff,.28));
-            cam.add(new T.PointLight(0xfff2d0,.55,8,1));
-            const cols = []
-              , rc = new T.Raycaster();
-            function mk(g, x, y, z, c, o={}) {
-                const m = new T.Mesh(g,matFor(c, o));
-                m.position.set(x, y, z);
-                if (o.act)
-                    m.userData = {
-                        act: o.act,
-                        name: o.n || ''
-                    };
-                sc.add(m);
-                return m
-            }
-            function box(x, y, z, w, h, d, c, o={}) {
-                const g = new T.BoxGeometry(w,h,d);
-                if (TM[c])
-                    uvs(g, w, h, d, y, TM[c][1]);
-                const m = mk(g, x, y + h / 2, z, c, o);
-                if (o.s)
-                    cols.push([x - w / 2, x + w / 2, z - d / 2, z + d / 2]);
-                return m
-            }
-            const cyl = (x, y, z, r, h, c, o) => mk(new T.CylinderGeometry(r,r,h,16), x, y + h / 2, z, c, o);
-            const sph = (x, y, z, r, c, o) => mk(new T.SphereGeometry(r,16,12), x, y, z, c, o);
-            function tex(t, x, y, z, ry, w, h, fg, bg) {
-                const c = document.createElement('canvas');
-                c.width = 256;
-                c.height = Math.round(256 * h / w);
-                const g = c.getContext('2d');
-                g.fillStyle = bg || 'rgba(0,0,0,0)';
-                g.fillRect(0, 0, c.width, c.height);
-                g.fillStyle = fg || '#fff';
-                g.font = 'bold ' + c.height * .6 + 'px sans-serif';
-                g.textAlign = 'center';
-                g.textBaseline = 'middle';
-                g.fillText(t, c.width / 2, c.height / 2);
-                const m = new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({
-                    map: new T.CanvasTexture(c),
-                    transparent: true
-                }));
-                m.position.set(x, y, z);
-                m.rotation.y = ry;
-                m.raycast = () => {}
-                ;
-                sc.add(m)
-            }
-
-            const R = (g, c, x, y, w, h) => {
-                g.fillStyle = c;
-                g.fillRect(x, y, w, h)
-            }
-              , C = (g, x, y, r, c) => {
-                g.fillStyle = c;
-                g.beginPath();
-                g.arc(x, y, r, 0, 7);
-                g.fill()
-            }
-            ;
-            const P = (g, a, b, f) => {
-                const q = g.createLinearGradient(0, 0, 0, 128);
-                q.addColorStop(0, a);
-                q.addColorStop(1, b);
-                R(g, q, 0, 0, 128, 128);
-                f();
-                g.strokeStyle = '#caa24a';
-                g.lineWidth = 8;
-                g.strokeRect(0, 0, 128, 128)
-            }
-            ;
-            const TD = {
-                wall: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let x = 0; x < 128; x += 16)
-                        R(g, 'rgba(255,255,255,.08)', x, 0, 8, 128);
-                    R(g, 'rgba(0,0,0,.4)', 0, 96, 128, 32);
-                    R(g, 'rgba(255,255,255,.25)', 0, 94, 128, 3)
-                }
-                ,
-                plank: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let i = 0; i < 4; i++) {
-                        R(g, 'rgba(255,255,255,' + (.02 + .04 * (i % 3)) + ')', 0, i * 32, 128, 32);
-                        R(g, 'rgba(0,0,0,.55)', 0, i * 32, 128, 2);
-                        for (let k = 0; k < 5; k++)
-                            R(g, 'rgba(0,0,0,.13)', (k * 47 + i * 31) % 100, i * 32 + 6 + k * 5, 30, 1)
-                    }
-                    R(g, 'rgba(0,0,0,.45)', 37, 0, 2, 32);
-                    R(g, 'rgba(0,0,0,.45)', 90, 64, 2, 32)
-                }
-                ,
-                wood: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let y = 2; y < 128; y += 5 + y % 4)
-                        R(g, 'rgba(0,0,0,.16)', 0, y, 128, 1);
-                    R(g, 'rgba(255,255,255,.07)', 0, 0, 128, 3)
-                }
-                ,
-                tile: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let i = 0; i < 4; i++)
-                        for (let j = 0; j < 4; j++)
-                            if ((i + j) % 2)
-                                R(g, 'rgba(255,255,255,.1)', i * 32, j * 32, 32, 32);
-                    R(g, 'rgba(0,0,0,.5)', 0, 0, 128, 2);
-                    R(g, 'rgba(0,0,0,.5)', 0, 0, 2, 128);
-                    R(g, 'rgba(0,0,0,.35)', 0, 64, 128, 1);
-                    R(g, 'rgba(0,0,0,.35)', 64, 0, 1, 128)
-                }
-                ,
-                conc: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let i = 0; i < 160; i++)
-                        R(g, Math.random() < .5 ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.18)', Math.random() * 128, Math.random() * 128, 2, 2);
-                    R(g, 'rgba(0,0,0,.4)', 0, 0, 128, 2);
-                    R(g, 'rgba(0,0,0,.4)', 0, 0, 2, 128)
-                }
-                ,
-                carpet: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    g.strokeStyle = '#d8b45a';
-                    g.lineWidth = 4;
-                    g.strokeRect(8, 8, 112, 112);
-                    g.lineWidth = 2;
-                    g.beginPath();
-                    g.moveTo(64, 24);
-                    g.lineTo(104, 64);
-                    g.lineTo(64, 104);
-                    g.lineTo(24, 64);
-                    g.closePath();
-                    g.stroke()
-                }
-                ,
-                books: g => {
-                    R(g, '#3a2412', 0, 0, 128, 128);
-                    for (let r = 0; r < 4; r++) {
-                        const y = r * 32;
-                        let x = 4;
-                        for (let k = 0; x < 120; k++) {
-                            const w = 6 + (k * 7 + r) % 7
-                              , h = 20 + (k * 5 + r * 3) % 9;
-                            R(g, ['#8a2b2b', '#2b4f8a', '#2f6b3f', '#b8923a', '#5a2b6b', '#7a7a7a'][(k + r * 2) % 6], x, y + 30 - h, w, h);
-                            x += w + 1
-                        }
-                        R(g, '#6a4424', 0, y + 30, 128, 2)
-                    }
-                }
-                ,
-                dresser: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let i = 0; i < 3; i++) {
-                        const y = 6 + i * 40;
-                        R(g, 'rgba(0,0,0,.4)', 8, y, 112, 34);
-                        R(g, c, 10, y + 2, 108, 30);
-                        R(g, 'rgba(255,255,255,.1)', 10, y + 2, 108, 4);
-                        C(g, 64, y + 17, 5, '#d9a82c')
-                    }
-                }
-                ,
-                drawer: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    R(g, 'rgba(255,255,255,.1)', 0, 0, 128, 6);
-                    R(g, '#d9a82c', 40, 56, 48, 12)
-                }
-                ,
-                door: g => {
-                    R(g, '#5e3b22', 0, 0, 128, 128);
-                    for (let y = 3; y < 128; y += 6)
-                        R(g, 'rgba(0,0,0,.15)', 0, y, 128, 1);
-                    [[12, 10], [12, 70]].forEach( ([x,y]) => {
-                        R(g, 'rgba(0,0,0,.4)', x, y, 104, 48);
-                        R(g, '#704628', x + 4, y + 4, 96, 40)
-                    }
-                    );
-                    C(g, 108, 66, 6, '#d9a82c');
-                    R(g, '#111', 106, 70, 4, 8)
-                }
-                ,
-                crate: (g, c) => {
-                    R(g, c, 0, 0, 128, 128);
-                    for (let y = 0; y < 128; y += 32)
-                        R(g, 'rgba(0,0,0,.45)', 0, y, 128, 3);
-                    g.strokeStyle = 'rgba(255,255,255,.18)';
-                    g.lineWidth = 6;
-                    g.strokeRect(3, 3, 122, 122);
-                    g.beginPath();
-                    g.moveTo(8, 8);
-                    g.lineTo(120, 120);
-                    g.moveTo(120, 8);
-                    g.lineTo(8, 120);
-                    g.stroke()
-                }
-                ,
-                win: g => P(g, '#9fb8cc', '#e4edf3', () => {
-                    R(g, '#5a4a3a', 60, 0, 8, 128);
-                    R(g, '#5a4a3a', 0, 60, 128, 8)
-                }
-                ),
-                dawn: g => P(g, '#f7c58a', '#e97a6e', () => {
-                    C(g, 64, 92, 20, '#fff1b0');
-                    R(g, '#4b2f45', 0, 100, 128, 28)
-                }
-                ),
-                noon: g => P(g, '#5aa9ee', '#bfe3ff', () => {
-                    C(g, 92, 36, 16, '#fff7b0');
-                    R(g, '#fff', 20, 30, 30, 8);
-                    R(g, '#3f8a4a', 0, 98, 128, 30)
-                }
-                ),
-                night: g => P(g, '#0b1233', '#26356b', () => {
-                    C(g, 90, 38, 15, '#f4f1d0');
-                    C(g, 97, 34, 13, '#10183f');
-                    for (let i = 0; i < 14; i++)
-                        R(g, '#fff', (i * 37) % 120 + 4, (i * 23) % 70 + 6, 2, 2);
-                    R(g, '#0a0f26', 0, 102, 128, 26)
-                }
-                ),
-                brk: g => {
-                    R(g, '#3a3d42', 0, 0, 128, 128);
-                    R(g, '#d9b300', 0, 0, 128, 14);
-                    for (let i = 0; i < 4; i++) {
-                        R(g, '#111', 14 + i * 28, 30, 18, 70);
-                        R(g, i == 1 ? '#e33' : '#bbb', 16 + i * 28, i == 1 ? 34 : 64, 14, 32)
-                    }
-                }
-                ,
-                mshelf: g => {
-                    R(g, '#44484d', 0, 0, 128, 128);
-                    for (let i = 0; i < 4; i++) {
-                        R(g, '#8a8f96', 0, i * 42, 128, 4);
-                        for (let k = 0; k < 3; k++)
-                            R(g, ['#8a6a3b', '#6a7a8a', '#7a4a3a'][(i + k) % 3], 6 + k * 40 + i * 5, i * 42 - 24, 30, 20)
-                    }
-                }
-            };
-            const TM = {
-                0x7a5a3c: ['wall', 3.5],
-                0x3a2a1c: ['plank', 2],
-                0x5a4a6e: ['wall', 3.5],
-                0x2a2438: ['plank', 2],
-                0x4a6b6e: ['wall', 3.5],
-                0x22343a: ['tile', 2],
-                0x55555a: ['conc', 3.5],
-                0x1c1c20: ['conc', 2],
-                0x7a6a3a: ['wall', 3.5],
-                0x3a321c: ['plank', 2],
-                0x6b1f1f: ['carpet', 0],
-                0x5b3a22: ['wood', 1.5],
-                0x2e1a0c: ['drawer', 0],
-                0x4a2f1a: ['books', 0],
-                0x9bd0ff: ['win', 0],
-                0x6a5a4a: ['wood', 1.5],
-                0xcfd8dc: ['conc', 2],
-                0x7d7d8a: ['door', 0],
-                0xf2b36a: ['dawn', 0],
-                0x6ab7f2: ['noon', 0],
-                0x1b2a55: ['night', 0],
-                0x2a2a2a: ['brk', 0],
-                0x8a6a3b: ['crate', 0],
-                0x7a5a2b: ['crate', 0],
-                0x6a4a22: ['crate', 0],
-                0x555555: ['mshelf', 0],
-                0x888888: ['conc', 2],
-                0x5e3a1e: ['dresser', 0]
-            }
-              , TC = {};
-            function tx(t, c) {
-                const K = t[0] + c;
-                if (TC[K])
-                    return TC[K];
-                const W = t[1] ? 128 : 256
-                  , cv = document.createElement('canvas');
-                cv.width = cv.height = W;
-                const g = cv.getContext('2d');
-                g.scale(W / 128, W / 128);
-                TD[t[0]](g, '#' + c.toString(16).padStart(6, '0'));
-                const x = new T.CanvasTexture(cv);
-                x.wrapS = x.wrapT = T.RepeatWrapping;
-                x.anisotropy = 4;
-                return TC[K] = x
-            }
-            function matFor(c, o) {
-                const t = TM[c]
-                  , k = t ? {
-                    map: tx(t, c)
-                } : {
-                    color: c
-                };
-                return o.b ? new T.MeshBasicMaterial(k) : new T.MeshPhongMaterial({
-                    ...k,
-                    shininess: 8,
-                    specular: 0x111111
-                })
-            }
-            function uvs(g, w, h, d, y0, s) {
-                if (!s)
-                    return;
-                const u = g.attributes.uv
-                  , D = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
-                for (let f = 0; f < 6; f++)
-                    for (let v = 0; v < 4; v++) {
-                        const i = f * 4 + v
-                          , sd = f < 2 || f > 3;
-                        u.setXY(i, u.getX(i) * D[f][0] / s, (u.getY(i) * D[f][1] + (sd ? y0 : 0)) / s)
-                    }
-            }
-            const IC = {
-                '小さな鍵': '<circle cx="15" cy="15" r="7" fill="none" stroke="#d5dde2" stroke-width="4"/><path d="M20 20L40 40M33 33l6-6M28 28l5-5" stroke="#d5dde2" stroke-width="4" stroke-linecap="round" fill="none"/>',
-                '真鍮の鍵': '<circle cx="14" cy="14" r="9" fill="#d9a82c"/><circle cx="14" cy="14" r="4" fill="#222"/><path d="M21 21L42 42M34 34l7-7M29 29l6-6" stroke="#d9a82c" stroke-width="5" stroke-linecap="round" fill="none"/>',
-                '大きな歯車': '<circle cx="24" cy="24" r="15" fill="none" stroke="#b08a4a" stroke-width="7" stroke-dasharray="6.5 6.5"/><circle cx="24" cy="24" r="13" fill="#b08a4a"/><circle cx="24" cy="24" r="5" fill="#222"/>',
-                '小さな歯車': '<circle cx="24" cy="24" r="9" fill="none" stroke="#9aa5ad" stroke-width="6" stroke-dasharray="4.5 4.5"/><circle cx="24" cy="24" r="8" fill="#9aa5ad"/><circle cx="24" cy="24" r="3" fill="#222"/>'
-            }
-              , DS = {
-                '小さな鍵': '小さな引き出し用の鍵。',
-                '真鍮の鍵': '書斎の扉の鍵。',
-                '大きな歯車': '扉の装置にはめる歯車。',
-                '小さな歯車': '扉の装置にはめる歯車。'
-            };
-            function inv() {
-                $('inv').innerHTML = [0, 1, 2, 3].map(i => {
-                    const n = S.inv[i];
-                    return n ? '<div class="sl' + (i == S.inv.length - 1 ? ' nw' : '') + '" data-i="' + i + '"><svg viewBox="0 0 48 48">' + IC[n] + '</svg>' + n + '</div>' : '<div class="sl e"></div>'
-                }
-                ).join('')
-            }
-            $('inv').onclick = e => {
-                const s = e.target.closest('[data-i]');
-                if (s) {
-                    const n = S.inv[s.dataset.i];
-                    say(n + '：' + DS[n])
-                }
-            }
-            ;
-            const S = {
-                inv: [],
-                f: {},
-                dg: [],
-                q: [],
-                t0: performance.now()
-            }
-              , DG = [6, 2, 0, 3]
-              , NM = ['書斎', 'ギャラリー', '実験室', '倉庫', '出口の間']
-              , doors = [];
-            const has = n => S.inv.includes(n);
-            let tm, over = 0;
-            function say(t) {
-                const m = $('msg');
-                m.textContent = t;
-                m.style.opacity = 1;
-                clearTimeout(tm);
-                tm = setTimeout( () => m.style.opacity = 0, 5500)
-            }
-            function give(n) {
-                S.inv.push(n);
-                inv()
-            }
-            let rm = 0;
-            function hud() {
-                $('hud').innerHTML = '<b>' + NM[rm] + '</b><br>刻印：' + [0, 1, 2, 3].map(i => S.dg[i] ?? '?').join(' ')
-            }
-            function openDoor(i) {
-                const d = doors[i];
-                if (d.o)
-                    return;
-                d.o = 1;
-                d.m.userData = {};
-                if (i < 4) {
-                    S.dg[i] = DG[i];
-                    say('扉が開いた！ 扉の裏に数字が刻まれている：「' + DG[i] + '」');
-                    hud()
-                } else {
-                    say('扉が開く…外の光が差し込んできた！');
-                    setTimeout(win, 1800)
-                }
-            }
-            function room(i, wc, fc, lit, da) {
-                const z0 = -9 * i
-                  , z1 = z0 - 8
-                  , zc = z0 - 4
-                  , zs = z1 - .5;
-                box(0, -.1, zc, 8, .1, 8, fc);
-                box(0, 3.4, zc, 8, .1, 8, 0x222226);
-                box(-4.2, 0, z0 - 4.5, .4, 3.5, 9, wc);
-                box(4.2, 0, z0 - 4.5, .4, 3.5, 9, wc);
-                box(-2.7, 0, zs, 3, 3.5, 1, wc);
-                box(2.7, 0, zs, 3, 3.5, 1, wc);
-                box(0, 2.6, zs, 2.4, .9, 1, wc);
-                if (i == 0)
-                    box(0, 0, z0 + .2, 8.8, 3.5, .4, wc);
-                if (i == 4)
-                    box(0, 0, z1 - .9, 2.4, 2.6, .05, 0xfffbe8, {
-                        b: 1
-                    });
-                doors[i] = {
-                    o: 0,
-                    m: box(0, 0, zs, 2.4, 2.6, .3, 0x7d7d8a, {
-                        act: da,
-                        n: '扉'
-                    })
-                };
-                const L = new T.PointLight(0xffe2b0,lit ? .95 : 0,13,1);
-                L.position.set(0, 3, zc);
-                sc.add(L);
-                return L
-            }
-
-            /* 1 書斎 */
-            const plant = () => {
-                if (S.f.k1)
-                    return say('ただの植木鉢だ。');
-                S.f.k1 = 1;
-                give('小さな鍵');
-                say('土の中に小さな鍵が埋まっていた！')
-            }
-            ;
-            const drawer = () => {
-                if (S.f.k2)
-                    return say('引き出しは空だ。');
-                if (!has('小さな鍵'))
-                    return say('引き出しには鍵がかかっている。');
-                S.f.k2 = 1;
-                give('真鍮の鍵');
-                say('小さな鍵で開いた！ 真鍮の鍵を手に入れた。')
-            }
-            ;
-            room(0, 0x7a5a3c, 0x3a2a1c, 1, () => has('真鍮の鍵') ? openDoor(0) : say('頑丈な扉だ。鍵が必要そうだ。'));
-            box(0, .01, -4, 4, .02, 5, 0x6b1f1f);
-            box(-2.2, 0, -6.4, 2.4, .8, 1.2, 0x5b3a22, {
-                s: 1,
-                n: '机',
-                act: () => say('立派な机だ。引き出しがある。')
-            });
-            box(-2.2, .35, -5.78, 1, .3, .06, 0x2e1a0c, {
-                n: '引き出し',
-                act: drawer
-            });
-            box(3.55, 0, -3, .8, 2.4, 3, 0x4a2f1a, {
-                s: 1,
-                n: '本棚',
-                act: () => say('古い本が並んでいる。背表紙：『扉の裏に注目せよ』')
-            });
-            cyl(-3.2, 0, -1.6, .35, .6, 0xb5651d, {
-                n: '植木鉢',
-                act: plant
-            });
-            sph(-3.2, .95, -1.6, .5, 0x2e7d32, {
-                n: '植木鉢',
-                act: plant
-            });
-            box(-3.95, 1.2, -3.5, .1, 1.2, 1.6, 0x9bd0ff, {
-                b: 1,
-                n: '窓',
-                act: () => say('外は深い霧で何も見えない。')
-            });
-            box(2.6, 0, -7.65, 1.8, 1.7, .7, 0x5e3a1e, {
-                s: 1,
-                n: 'タンス',
-                act: () => say('古い服ばかり。ポケットにメモ：「大事な物は、緑の中に隠した」')
-            });
-
-            /* 2 ギャラリー */
-            room(1, 0x5a4a6e, 0x2a2438, 1, () => S.f.c2 ? 0 : askCode(3, '3桁の数字錠', c => c === '395' ? openDoor(1) : say('ガチャ…。違うようだ。')));
-            box(0, 0, -11, 2, .8, 1, 0x6a5a4a, {
-                s: 1,
-                n: 'テーブル',
-                act: () => say('メモ：「一日の流れの通りに、数字を並べよ。朝、昼、夜。」')
-            });
-            box(-3, 0, -14, 1.2, .5, 2.5, 0x3a2a4a, {
-                s: 1
-            });
-            [['朝', -15, 0xf2b36a, 3], ['昼', -13, 0x6ab7f2, 9], ['夜', -11, 0x1b2a55, 5]].forEach( ([t,z,c,d]) => {
-                box(3.95, 1, z, .1, 1.2, 1.4, c, {
-                    n: '絵画',
-                    act: () => say('『' + t + '』の額縁の裏に「' + d + '」と書かれている。')
-                });
-                tex(t, 3.88, .8, z, -Math.PI / 2, .5, .25)
-            }
-            );
-
-            /* 3 実験室 */
-            room(2, 0x4a6b6e, 0x22343a, 1, () => say('電子ロックされている。壁のパネルが関係していそうだ。'));
-            box(-2.7, 1.05, -25.8, 2.2, .08, .35, 0x333333);
-            [0x2f6fe0, 0xe03030, 0x2fb04a, 0xe8d030].forEach( (c, k) => cyl(-3.4 + k * .5, 1.1, -25.8, .12, .5, c, {
-                n: '試験管',
-                act: () => say('色付きの液体が入った試験管だ。')
-            }));
-            box(2.7, .8, -25.95, 1.8, .7, .1, 0x222a2e);
-            const press = id => {
-                if (S.f.p3)
-                    return;
-                S.q.push(id);
-                const n = S.q.length;
-                if (S.q[n - 1] !== 'bryg'[n - 1]) {
-                    S.q = [];
-                    say('ブザーが鳴った…最初からやり直しだ。')
-                } else if (n == 4) {
-                    S.f.p3 = 1;
-                    say('ピッ！ ロックが外れる音がした。');
-                    openDoor(2)
-                } else
-                    say('ピッ（' + n + '/4）')
-            }
-            ;
-            [['r', 0xe03030, 2.05], ['y', 0xe8d030, 2.5], ['b', 0x2f6fe0, 2.95], ['g', 0x2fb04a, 3.4]].forEach( ([id,c,x]) => box(x, 1, -25.85, .3, .3, .1, c, {
-                b: 1,
-                n: 'ボタン',
-                act: () => press(id)
-            }));
-            box(-1, 0, -21.5, 2, .8, 1, 0xcfd8dc, {
-                s: 1,
-                n: '実験台',
-                act: () => say('実験メモ：「試験管の並びを左から順に、パネルへ入力せよ」')
-            });
-            cyl(-1.6, .8, -21.5, .12, .3, 0x88ddff, {
-                b: 1
-            });
-            cyl(-.5, .8, -21.5, .12, .3, 0xffaadd, {
-                b: 1
-            });
-
-            /* 4 倉庫（暗い） */
-            const L4 = room(3, 0x55555a, 0x1c1c20, 0, () => has('大きな歯車') && has('小さな歯車') ? (say('2つの歯車をはめ込むと、扉の装置が動き出した！'),
-            openDoor(3)) : say('扉に歯車をはめる装置がある。歯車が2つ必要そうだ。'));
-            const lit = f => S.f.pw ? f() : say('暗くてよく見えない…。どこかに電源があるはずだ。');
-            const power = () => {
-                if (S.f.pw)
-                    return say('もう電気は点いている。');
-                S.f.pw = 1;
-                L4.intensity = 1;
-                say('ブレーカーを上げた！ 部屋が明るくなった。')
-            }
-            ;
-            box(3.9, 1.2, -29, .15, .9, .6, 0x2a2a2a, {
-                n: 'ブレーカー',
-                act: power
-            });
-            box(3.8, 1.9, -29, .08, .12, .12, 0xff2020, {
-                b: 1,
-                n: 'ブレーカー',
-                act: power
-            });
-            box(-2.6, 0, -29.5, 1.3, 1, 1.3, 0x8a6a3b, {
-                s: 1,
-                n: '木箱',
-                act: () => lit( () => {
-                    if (S.f.g1)
-                        return say('空っぽだ。');
-                    S.f.g1 = 1;
-                    give('大きな歯車');
-                    say('木箱の中に大きな歯車があった！')
-                }
-                )
-            });
-            box(-3.7, 0, -33, .6, 2, 3, 0x555555, {
-                s: 1,
-                n: '棚',
-                act: () => lit( () => {
-                    if (S.f.g2)
-                        return say('もう何もない。');
-                    S.f.g2 = 1;
-                    give('小さな歯車');
-                    say('棚の奥に小さな歯車が転がっていた！')
-                }
-                )
-            });
-            box(2.6, 0, -32, 1.2, 1.2, 1.2, 0x7a5a2b, {
-                s: 1,
-                n: '木箱',
-                act: () => lit( () => say('中身はガラクタばかりだ。'))
-            });
-            box(1.2, 0, -33.8, 1, .8, 1, 0x6a4a22, {
-                s: 1
-            });
-
-            /* 5 出口の間 */
-            room(4, 0x7a6a3a, 0x3a321c, 1, () => askCode(4, '4桁の暗証番号', c => c === DG.join('') ? openDoor(4) : say('ブーッ。違うようだ。')));
-            tex('EXIT', 0, 3.05, -43.97, 0, 1.2, .4, '#ffe9a8', '#8a1c1c');
-            box(-2.8, 1.2, -43.9, 1.6, .7, .08, 0x222222, {
-                n: '銘板',
-                act: () => say('銘板：「歩んだ扉の裏の数字を、順に押せ」')
-            });
-            box(0, 0, -40, 1, .8, 1, 0x888888, {
-                s: 1
-            });
-            sph(0, 1.15, -40, .25, 0xffe28a, {
-                b: 1,
-                n: '宝玉',
-                act: () => say('光る宝玉。ただの飾りのようだ。')
-            });
-
-            /* 入力 */
-            let padOpen = 0, buf = '', pcb, pn = 0;
-            const draw = () => $('pd').textContent = (buf + '_'.repeat(pn - buf.length)).split('').join(' ');
-            ['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'OK'].forEach(k => {
-                const b = document.createElement('button');
-                b.textContent = k;
-                b.onclick = () => {
-                    if (k === '←')
-                        buf = buf.slice(0, -1);
-                    else if (k === 'OK') {
-                        if (buf.length === pn) {
-                            const f = pcb
-                              , v = buf;
-                            closePad();
-                            f(v)
-                        }
-                        return
-                    } else if (buf.length < pn)
-                        buf += k;
-                    draw()
-                }
-                ;
-                $('pk').appendChild(b)
-            }
-            );
-            function askCode(n, t, cb) {
-                pn = n;
-                buf = '';
-                pcb = cb;
-                padOpen = 1;
-                for (const k in K)
-                    K[k] = 0;
-                $('pt').textContent = t;
-                draw();
-                $('pad').style.display = 'block'
-            }
-            function closePad() {
-                padOpen = 0;
-                $('pad').style.display = 'none'
-            }
-            function win() {
-                over = 1;
-                const s = Math.round((performance.now() - S.t0) / 1000);
-                $('end').innerHTML = '<h2>脱出成功！</h2><p>クリアタイム ' + Math.floor(s / 60) + '分' + s % 60 + '秒</p><button onclick="location.reload()">もう一度遊ぶ</button>';
-                $('end').style.display = 'block'
-            }
-            const K = {};
-            let yaw = 0
-              , pit = 0
-              , dn = null;
-            addEventListener('keydown', e => {
-                if (!padOpen)
-                    K[e.key.toLowerCase()] = 1
-            }
-            );
-            addEventListener('keyup', e => K[e.key.toLowerCase()] = 0);
-            document.querySelectorAll('#mv button').forEach(b => {
-                const k = b.dataset.k;
-                b.onpointerdown = e => {
-                    e.preventDefault();
-                    K[k] = 1
-                }
-                ;
-                b.onpointerup = b.onpointerleave = b.onpointercancel = () => K[k] = 0
-            }
-            );
-            function pick(x, y) {
-                rc.setFromCamera({
-                    x: x / innerWidth * 2 - 1,
-                    y: -(y / innerHeight) * 2 + 1
-                }, cam);
-                const h = rc.intersectObjects(sc.children, true)[0];
-                return h && h.object.userData.act ? h : null
-            }
-            const cv = ren.domElement;
-            cv.addEventListener('pointerdown', e => {
-                cv.setPointerCapture(e.pointerId);
-                dn = {
-                    x: e.clientX,
-                    y: e.clientY,
-                    m: 0,
-                    t: Date.now()
-                }
-            }
-            );
-            cv.addEventListener('pointermove', e => {
-                if (dn) {
-                    const dx = e.clientX - dn.x
-                      , dy = e.clientY - dn.y;
-                    dn.m += Math.abs(dx) + Math.abs(dy);
-                    dn.x = e.clientX;
-                    dn.y = e.clientY;
-                    yaw -= dx * .005;
-                    pit = Math.max(-1.2, Math.min(1.2, pit - dy * .005))
-                } else {
-                    const h = pick(e.clientX, e.clientY)
-                      , t = $('tip');
-                    cv.style.cursor = h ? 'pointer' : 'grab';
-                    t.style.display = h && h.object.userData.name ? 'block' : 'none';
-                    if (h) {
-                        t.textContent = h.object.userData.name;
-                        t.style.left = e.clientX + 14 + 'px';
-                        t.style.top = e.clientY + 14 + 'px'
-                    }
-                }
-            }
-            );
-            cv.addEventListener('pointerup', e => {
-                if (dn && dn.m < 8 && Date.now() - dn.t < 500 && !over) {
-                    const h = pick(e.clientX, e.clientY);
-                    if (h) {
-                        if (h.distance > 4.5)
-                            say('もう少し近づこう。');
-                        else
-                            h.object.userData.act()
-                    }
-                }
-                dn = null
-            }
-            );
-            addEventListener('resize', () => {
-                cam.aspect = innerWidth / innerHeight;
-                cam.updateProjectionMatrix();
-                ren.setSize(innerWidth, innerHeight, false)
-            }
-            );
-            function ok(x, z) {
-                const m = .35;
-                let r = 0;
-                for (let i = 0; i < 5; i++) {
-                    const z0 = -9 * i
-                      , z1 = z0 - 8;
-                    if (x > -4 + m && x < 4 - m && z < z0 - m && z > z1 + m)
-                        r = 1;
-                    if (i < 4 && doors[i].o && Math.abs(x) < .9 && z < z1 + 2 * m && z > z1 - 1 - 2 * m)
-                        r = 1
-                }
-                return r && !cols.some(c => x > c[0] - .3 && x < c[1] + .3 && z > c[2] - .3 && z < c[3] + .3)
-            }
-            let last = performance.now();
-            function loop(t) {
-                requestAnimationFrame(loop);
-                const dt = Math.min(.05, (t - last) / 1000);
-                last = t;
-                if (!over) {
-                    if (K.arrowleft)
-                        yaw += dt * 1.8;
-                    if (K.arrowright)
-                        yaw -= dt * 1.8;
-                    const f = (K.w || K.arrowup ? 1 : 0) - (K.s || K.arrowdown ? 1 : 0)
-                      , r = (K.d ? 1 : 0) - (K.a ? 1 : 0);
-                    if (f || r) {
-                        const sx = Math.sin(yaw)
-                          , cx = Math.cos(yaw)
-                          , vx = (-sx * f + cx * r) * 3.2 * dt
-                          , vz = (-cx * f - sx * r) * 3.2 * dt
-                          , p = cam.position;
-                        if (ok(p.x + vx, p.z))
-                            p.x += vx;
-                        if (ok(p.x, p.z + vz))
-                            p.z += vz
-                    }
-                }
-                cam.rotation.set(pit, yaw, 0);
-                doors.forEach(d => {
-                    if (d.o && d.m.position.y < 3.9)
-                        d.m.position.y = Math.min(3.9, d.m.position.y + dt * 2)
-                }
-                );
-                const n = Math.min(4, Math.max(0, Math.floor(-cam.position.z / 9)));
-                if (n !== rm) {
-                    rm = n;
-                    hud()
-                }
-                ren.render(sc, cam)
-            }
-            hud();
-            inv();
-            say('ドラッグで見回し、WASD／矢印キーで移動。気になる物をクリック！');
-            requestAnimationFrame(loop);
-        </script>
-    </body>
+    <script src="./script.js"></script>
+  </body>
 </html>
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>月影館 - 脱出ゲーム</title>
+<style>
+:root{--bg:#0f0b14;--pn:#1a1422;--ln:#3a2f44;--gold:#d9b25a;--ink:#efe6d2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);color-scheme:dark;font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+#app{max-width:520px;height:100%;margin:0 auto;display:flex;flex-direction:column;gap:8px;padding:8px 10px}
+header{display:flex;justify-content:space-between;align-items:center;font-size:15px;letter-spacing:.15em}
+#tm{color:var(--gold);font-variant-numeric:tabular-nums;margin-right:10px}
+button{font:inherit;color:inherit;cursor:pointer}
+#hint{background:none;border:1px solid var(--ln);border-radius:20px;padding:4px 12px;font-size:13px}
+#sc{position:relative;aspect-ratio:320/250;width:100%;border:1px solid var(--ln);border-radius:10px;overflow:hidden;background:#000;transition:opacity .15s;box-shadow:0 0 24px #000a}
+#sc svg{width:100%;height:100%;display:block}
+[data-h]{cursor:pointer}
+nav{display:flex;align-items:center;justify-content:space-between}
+nav button{width:64px;height:38px;background:var(--pn);border:1px solid var(--ln);border-radius:8px;font-size:18px}
+#wl{font-size:13px;letter-spacing:.15em;color:var(--gold)}
+#msg{flex:1;min-height:70px;overflow:auto;padding:10px 14px;background:var(--pn);border:1px solid var(--ln);border-radius:10px;font-size:14.5px;line-height:1.8;white-space:pre-line;animation:in .35s}
+@keyframes in{from{opacity:0}}
+#inv{display:flex;gap:6px}
+.sl{flex:1;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:var(--pn);border:1px solid var(--ln);border-radius:8px;font-size:9px;line-height:1.15;text-align:center;padding:0}
+.sl span{font-size:22px;line-height:1}
+.sl.on{border-color:var(--gold);box-shadow:0 0 12px #d9b25a99}
+.sl.new{animation:pp .6s cubic-bezier(.2,1.6,.4,1)}
+#ov{position:fixed;inset:0;z-index:9;display:none;align-items:center;justify-content:center;padding:24px;background:#0a070ef0;text-align:center}
+#ov.on{display:flex}
+.card{max-width:340px;line-height:1.9;font-size:14px}
+.card h1{font-size:30px;letter-spacing:.3em;margin:0 0 6px;color:var(--gold);font-weight:600}
+.card small{display:block;color:#a89cb4;font-size:12px;margin:14px 0 20px;line-height:1.8}
+.bt{background:var(--gold);color:#1b1410;border:0;border-radius:24px;padding:10px 30px;font-size:15px;letter-spacing:.2em;margin:4px}
+.bt.g{background:none;color:var(--ink);border:1px solid var(--ln)}
+#dg{display:flex;gap:10px;justify-content:center;margin:16px 0}
+.dg{width:58px;height:78px;font-size:34px;background:#0e0b12;border:2px solid var(--gold);border-radius:8px;color:var(--gold)}
+.sh{animation:sh .35s}
+@keyframes sh{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.fl{animation:fl .5s infinite alternate;transform-box:fill-box;transform-origin:center bottom}
+@keyframes fl{to{transform:scale(1.12,.88)}}
+.st{animation:tw 2.5s infinite alternate}
+@keyframes tw{to{opacity:.5}}
+.sp{animation:sp 9s linear infinite}
+.sq{animation:sp 7s linear infinite reverse}
+@keyframes sp{to{transform:rotate(360deg)}}
+.pp{transform-box:fill-box;transform-origin:center;animation:pp .7s cubic-bezier(.2,1.6,.4,1)}
+@keyframes pp{from{transform:scale(0)}}
+#sc.use [data-h]{filter:drop-shadow(0 0 3px #ffd36b);animation:pu 1s infinite alternate}
+@keyframes pu{to{filter:drop-shadow(0 0 8px #ffd36b)}}
+#sc.op [data-h="door"]{transform-box:fill-box;transform-origin:left center;animation:dz 1.3s ease-in forwards}
+@keyframes dz{to{transform:scaleX(.12);filter:brightness(2.4)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style></head>
+<body>
+<div id="app">
+<header><span>月影館</span><span><span id="tm">00:00</span><button id="hint">ヒント</button></span></header>
+<div id="sc"></div>
+<nav><button data-g="-1" aria-label="左へ">◀</button><span id="wl"></span><button data-g="1" aria-label="右へ">▶</button></nav>
+<div id="msg"></div>
+<div id="inv"></div>
+</div>
+<div id="ov"></div>
+<script>
+const $=s=>document.querySelector(s);
+const say=m=>{const e=$('#msg');e.textContent=m;e.style.animation='none';e.offsetHeight;e.style.animation=''};
+let rm,wall,inv,sel,f,t0,hn,code,kk,last,tick;
+const IT={
+letter:['✉️','焦げた手紙','「机の錠は四つの数。\n窓辺の星、時計の短針、暖炉の薪、本棚の欠番。\nこの順に並べよ。」'],
+key:['🗝️','真鍮の鍵','小さな真鍮の鍵。小箱のものだろうか。'],
+medal:['🌙','月のメダル','三日月の刻まれたメダル。どこかのくぼみにはまりそうだ。'],
+lens:['🔭','レンズ','磨かれた大きなレンズ。'],
+memo:['📝','走り書き','「望遠鏡の像は、上下左右が逆さまに映る」'],
+gear:['⚙️','真鍮の歯車','手のひら大の歯車。どこかの軸にはまりそうだ。'],
+oil:['🛢️','油差し','機械油の入った油差し。']};
+const NM=['書斎','天文台','時計塔'],DR_=['北','東','南','西'];
+const K={desk:'7436',cab:'3225',d2:'1618',z:'6347'},P={desk:'机の錠。四桁の数字を入れる',cab:'引き出しの錠。四桁の数字を入れる',d2:'扉の錠。四桁の数字を入れる',z:'最後の扉。四桁の数字を入れる'};
+const RI=['','天文台。冷たい石の部屋で、巨大な望遠鏡が夜空を向いている。','時計塔の機械室。止まった歯車が、闇の中に並んでいる。'];
+const DF=`<defs><linearGradient id="wd" x2="0" y2="1"><stop offset="0" stop-color="#85593a"/><stop offset=".5" stop-color="#5c3b25"/><stop offset="1" stop-color="#3a2415"/></linearGradient><linearGradient id="br" x2="1" y2="1"><stop offset="0" stop-color="#f6df8f"/><stop offset=".5" stop-color="#b8892f"/><stop offset="1" stop-color="#6a4914"/></linearGradient><linearGradient id="st" x2="0" y2="1"><stop offset="0" stop-color="#8c8498"/><stop offset="1" stop-color="#474052"/></linearGradient><linearGradient id="sk" x2="0" y2="1"><stop offset="0" stop-color="#050a1f"/><stop offset="1" stop-color="#1f3466"/></linearGradient><linearGradient id="fl" x2="0" y2="1"><stop offset="0" stop-color="#2c2129"/><stop offset="1" stop-color="#0d0910"/></linearGradient><radialGradient id="gw"><stop offset="0" stop-color="#ffd9a0" stop-opacity=".85"/><stop offset="1" stop-color="#ffd9a0" stop-opacity="0"/></radialGradient><radialGradient id="vg" cx=".5" cy=".45" r=".78"><stop offset=".45" stop-opacity="0"/><stop offset="1" stop-opacity=".8"/></radialGradient><pattern id="pt" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M16 3l8 13-8 13-8-13z" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width="1.2"/><circle cx="16" cy="16" r="1.6" fill="#fff" fill-opacity=".06"/></pattern><clipPath id="cp"><circle cx="160" cy="84" r="62"/></clipPath><filter id="g1" x="0" y="0" width="1" height="1"><feTurbulence type="fractalNoise" baseFrequency=".01 .45" numOctaves="3" seed="5"/><feColorMatrix values="0 0 0 0 .08 0 0 0 0 .04 0 0 0 0 .02 1.8 0 0 0 -.65"/></filter><filter id="g2"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2"/><feColorMatrix values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .2 0"/></filter><filter id="sh" x="-10%" y="-10%" width="125%" height="125%"><feDropShadow dx="1.5" dy="3" stdDeviation="2.2" flood-opacity=".65"/></filter></defs>`;
+const bg=(a,b)=>`<rect width="320" height="250" fill="${a}"/><rect width="320" height="205" fill="url(#pt)"/><rect y="140" width="320" height="65" fill="${b}" opacity=".6"/><path d="M0 140H320" stroke="#000" stroke-opacity=".45"/><path d="M0 143H320" stroke="#fff" stroke-opacity=".08"/><rect y="205" width="320" height="45" fill="url(#fl)"/><path d="M0 219H320M0 234H320M70 205L30 250M140 205L125 250M210 205L215 250M275 205L315 250" stroke="#000" stroke-opacity=".4"/><rect y="200" width="320" height="6" fill="#2b1a12"/><rect y="200" width="320" height="1.5" fill="#d9a878" fill-opacity=".4"/>`;
+const WD=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#wd)" stroke="#1f120a" stroke-width="1.5"/><rect x="${x}" y="${y}" width="${w}" height="${h}" filter="url(#g1)" opacity=".6"/><path d="M${x+1} ${y+1.5}h${w-2}" stroke="#e0b088" stroke-opacity=".5"/>`;
+const BR=(x,y,r)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="url(#br)" stroke="#3a2508" stroke-width=".8"/>`;
+const GL=(x,y,r,o=1)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="url(#gw)" opacity="${o}" style="pointer-events:none"/>`;
+const DR=(x,y,w,h,s='')=>`<g data-h="door" filter="url(#sh)">${WD(x,y,w,h)}${[0,1].map(i=>[0,1].map(j=>`<rect x="${x+8+i*(w/2-4)}" y="${y+8+j*(h/2-4)}" width="${w/2-12}" height="${h/2-12}" fill="#000" opacity=".3" stroke="#e0b088" stroke-opacity=".35"/>`).join('')).join('')}${BR(x+w-9,y+h/2,4)}${s}</g>`;
+const hd=(x,y,a,l,w)=>{const t=a*Math.PI/180;return `<path d="M${x} ${y}L${x+l*Math.sin(t)} ${y-l*Math.cos(t)}" stroke="#15110d" stroke-width="${w}" stroke-linecap="round"/>`};
+const CK=(x,y,r,h,m)=>`<g data-h="clock" filter="url(#sh)"><circle cx="${x}" cy="${y}" r="${r}" fill="url(#br)"/><circle cx="${x}" cy="${y}" r="${r-4}" fill="#efe5c8"/><circle cx="${x}" cy="${y}" r="${r-9}" fill="none" stroke="#2a2118" stroke-width="3" stroke-dasharray="1.2 ${(2*Math.PI*(r-9)/12-1.2).toFixed(2)}"/>${hd(x,y,h,r*.5,3.4)}${hd(x,y,m,r*.75,2)}<circle cx="${x}" cy="${y}" r="2.6" fill="#15110d"/></g>`;
+const BK=(x0,y,n,s,L)=>{let o='',x=x0;for(let i=0;i<n;i++){const w=9+(i*7+s)%5,h=34+(i*11+s)%12;o+=`<rect x="${x}" y="${y-h}" width="${w}" height="${h}" fill="hsl(${(i*53+s*37)%360} 38% ${28+(i*5+s)%10}%)" stroke="#0007" stroke-width=".6"/><rect x="${x}" y="${y-h+4}" width="${w}" height="2" fill="#d9b25a" opacity=".7"/>${L?`<text x="${x+w/2}" y="${y-h/2+2}" font-size="7" fill="#f3e6b8" text-anchor="middle">${L[i]}</text>`:''}`;x+=w+1}return o};
+const GE=(x,y,r,c='')=>`<g class="${c}" style="transform-origin:${x}px ${y}px"><circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="#8a6420" stroke-width="${r*.26}" stroke-dasharray="${(r*.3).toFixed(1)} ${(r*.3).toFixed(1)}"/><circle cx="${x}" cy="${y}" r="${r*.88}" fill="url(#br)" stroke="#5a3f12"/><circle cx="${x}" cy="${y}" r="${r*.55}" fill="#0003"/><circle cx="${x}" cy="${y}" r="${r*.18}" fill="#2a1d08"/></g>`;
+const STR=(pts,c='')=>pts.map(p=>`<path ${c} d="M-3 0L-.8-.8 0-3 .8-.8 3 0 .8.8 0 3-.8.8z" transform="translate(${p[0]} ${p[1]})"/>`).join('');
+const W1=['#2a2036','#21192b'],W2=['#171d31','#10162a'],W3=['#33241c','#261a14'];
+const R=[[
+()=>bg(...W1)+`${GL(52,98,64,.4)}${CK(52,98,30,140,240)}${DR(112,48,92,158,`<circle cx="158" cy="120" r="10" fill="#0d0a10" stroke="url(#br)" stroke-width="2"/><path d="M161 113a7.5 7.5 0 1 0 0 14a6 6 0 1 1 0-14z" fill="#b8892f"/>`)}<g filter="url(#sh)"><rect x="230" y="68" width="50" height="62" fill="url(#br)"/><rect x="236" y="74" width="38" height="50" fill="#1a1423"/><circle cx="255" cy="98" r="9" fill="#c9b99a"/><path d="M242 124q13-26 26 0z" fill="#c9b99a"/></g>`,
+()=>bg(...W1)+`<g data-h="shelf" filter="url(#sh)">${WD(30,34,152,176)}<rect x="37" y="41" width="138" height="162" fill="#130b08"/>${[88,143,198].map(y=>`<rect x="37" y="${y}" width="138" height="5" fill="url(#wd)"/>`).join('')}${BK(43,88,11,1)}${BK(43,143,8,4,[1,2,3,4,5,7,8,9])}${BK(43,198,7,7)}</g><g data-h="box1" filter="url(#sh)">${WD(136,176,36,22)}<rect x="136" y="183" width="36" height="3" fill="url(#br)"/>${BR(154,188,3.2)}</g><g data-h="art" filter="url(#sh)"><rect x="198" y="46" width="98" height="94" fill="url(#br)"/><rect x="205" y="53" width="84" height="80" fill="url(#sk)"/><circle cx="268" cy="75" r="8" fill="#f3eecb"/><path d="M205 133V112q20-14 42-6t42-4v31z" fill="#0c1220"/><path d="M222 112V96h24v16zM218 96l16-12 16 12z" fill="#05070f"/>${[[225,100],[232,100],[239,100],[226,106],[238,106]].map(p=>`<rect x="${p[0]}" y="${p[1]}" width="4" height="4" fill="#ffd36b"/>`).join('')}</g>`,
+()=>bg(...W1)+`<g data-h="win" filter="url(#sh)"><path d="M36 178V88q0-52 59-52t59 52v90z" fill="url(#sk)" stroke="url(#br)" stroke-width="6"/><circle cx="128" cy="84" r="14" fill="#f3eecb"/><circle cx="134" cy="80" r="12" fill="#13234a"/><g fill="#fff" class="st">${STR([[58,74],[78,58],[70,108],[112,118],[56,142],[100,152],[132,138]])}</g><rect x="30" y="176" width="130" height="7" fill="url(#wd)"/><path d="M26 30h22q-10 70-4 152h-22zM140 30h22q6 80 0 152h-18q6-80-4-152z" fill="#7a2030"/><path d="M34 34v146M41 34v146M150 34v146M156 34v146" stroke="#000" stroke-opacity=".25"/></g><rect x="174" y="104" width="134" height="14" fill="url(#st)"/><rect x="184" y="118" width="114" height="87" fill="url(#st)"/><rect x="184" y="118" width="114" height="87" filter="url(#g2)"/><g data-h="fire" filter="url(#sh)"><path d="M196 205V160q0-28 45-28t45 28v45z" fill="#0b0709"/>${GL(241,178,56,1)}<rect x="206" y="194" width="32" height="10" rx="5" fill="url(#wd)"/><rect x="244" y="194" width="32" height="10" rx="5" fill="url(#wd)"/><rect x="222" y="184" width="40" height="10" rx="5" fill="url(#wd)"/><path class="fl" d="M241 186c-17-10-11-28 0-44 4 12 16 16 14 30-1 7-5 11-14 14z" fill="#ff8a2a"/><path class="fl" d="M241 186c-8-6-5-16 0-24 2 7 8 9 7 16-1 5-3 7-7 8z" fill="#ffd36b"/></g>`,
+()=>bg(...W1)+`<g filter="url(#sh)"><rect x="40" y="38" width="64" height="80" fill="url(#br)"/><rect x="46" y="44" width="52" height="68" fill="#1a1423"/><circle cx="72" cy="72" r="12" fill="#bba88c"/><path d="M53 112q19-34 38 0z" fill="#bba88c"/></g><ellipse cx="170" cy="232" rx="120" ry="13" fill="#5a1f2b" opacity=".85"/><g data-h="globe" filter="url(#sh)"><circle cx="238" cy="114" r="22" fill="#2a5d8a"/><path d="M224 106q8-10 16-2t6 12q-10 8-18 2z" fill="#5e8f5a"/><circle cx="230" cy="106" r="7" fill="#fff" opacity=".18"/><path d="M238 136v12M226 150h24" stroke="url(#br)" stroke-width="4"/></g><g filter="url(#sh)">${WD(40,152,250,14)}${WD(50,166,230,40)}</g><g data-h="dw" filter="url(#sh)">${WD(110,f.dw?180:172,110,f.dw?24:30)}${f.dw?'<rect x="110" y="172" width="110" height="8" fill="#080403"/>':''}${BR(165,f.dw?192:187,4.5)}<rect x="163" y="${f.dw?196:191}" width="4" height="5" fill="#2a1d08"/></g><g data-h="lamp" filter="url(#sh)">${GL(92,132,72,.55)}<rect x="88" y="136" width="5" height="14" fill="url(#br)"/><path d="M72 132q4-26 20-26t20 26z" fill="#2f7a55"/><path d="M80 130q3-16 12-18" stroke="#fff" stroke-opacity=".3" fill="none"/></g>`
+],[
+()=>bg(...W2)+`<circle cx="160" cy="84" r="66" fill="url(#sk)" stroke="url(#br)" stroke-width="7"/><g clip-path="url(#cp)"><ellipse cx="160" cy="84" rx="80" ry="16" fill="#fff" opacity=".1" transform="rotate(-30 160 84)"/><g fill="#fff">${Array.from({length:40},(_,i)=>`<circle cx="${98+(i*37)%124}" cy="${24+(i*53)%120}" r="${i%4?.8:1.4}" class="${i%3?'':'st'}"/>`).join('')}</g></g><g data-h="scope" filter="url(#sh)"><path d="M160 150L126 206M160 150L194 206M160 150V206" stroke="#5c3b25" stroke-width="5" fill="none"/><g transform="rotate(-32 160 150)"><rect x="150" y="62" width="20" height="96" rx="4" fill="url(#br)"/><rect x="146" y="56" width="28" height="12" rx="3" fill="#5a3f12"/><rect x="152" y="70" width="3" height="80" fill="#fff" opacity=".35"/></g><rect x="232" y="132" width="40" height="44" fill="#0d0a10" stroke="url(#br)" stroke-width="3"/>${f.pw?GL(252,154,34,.9):''}<path d="M255 144a10 10 0 1 0 0 20a8 8 0 1 1 0-20z" fill="${f.pw?'#ffd36b':'#8a6a22'}"/></g>`,
+()=>bg(...W2)+`<g data-h="chart" filter="url(#sh)"><rect x="40" y="34" width="240" height="146" fill="#d8c79a" stroke="url(#br)" stroke-width="5"/><circle cx="106" cy="92" r="42" fill="none" stroke="#5a4a2a"/><circle cx="106" cy="92" r="28" fill="none" stroke="#5a4a2a" stroke-dasharray="2 3"/><path d="M84 74L100 66L122 78L112 100L90 108" stroke="#5a4a2a" fill="none"/><g fill="#3a2a10">${STR([[84,74],[100,66],[122,78],[112,100],[90,108]])}</g><text x="214" y="82" font-size="13" text-anchor="middle" fill="#2a1d08">2  4  8  16  ?</text><text x="214" y="108" font-size="13" text-anchor="middle" fill="#2a1d08">1  4  9  16  ?</text><text x="214" y="150" font-size="8" text-anchor="middle" fill="#5a4a2a">二つの答えを、並べよ</text></g>`,
+()=>bg(...W2)+`<g filter="url(#sh)">${WD(40,152,240,14)}${WD(50,166,220,40)}</g><g data-h="desk2" filter="url(#sh)">${WD(100,f.cab?180:172,120,f.cab?24:30)}${f.cab?'<rect x="100" y="172" width="120" height="8" fill="#080403"/>':''}${BR(160,f.cab?192:187,4.5)}</g><g filter="url(#sh)">${GL(70,132,60,.6)}<rect x="60" y="128" width="20" height="24" fill="url(#br)"/><rect x="63" y="116" width="14" height="12" fill="#ffd36b" opacity=".85"/><path d="M62 116h16l-3-8h-10z" fill="#6a4914"/></g><rect x="214" y="138" width="36" height="14" fill="#e8dcc0" transform="rotate(-6 232 145)"/><rect x="236" y="130" width="26" height="22" fill="#d8c79a" transform="rotate(5 249 141)"/><circle cx="276" cy="146" r="6" fill="#222"/>`,
+()=>bg(...W2)+`<g filter="url(#sh)">${WD(24,70,74,136)}<rect x="30" y="76" width="62" height="124" fill="#130b08"/>${[110,150,196].map(y=>`<rect x="30" y="${y}" width="62" height="4" fill="url(#wd)"/>`).join('')}${BK(32,110,5,2)}${BK(32,150,5,5)}${BK(32,196,5,8)}</g>${DR(124,48,92,158,`<circle cx="170" cy="118" r="13" fill="url(#br)" stroke="#3a2508"/><circle cx="170" cy="118" r="7" fill="#15110d"/><path d="M170 118V111" stroke="#d9b25a" stroke-width="2"/>`)}<g fill="#0a0d1c"><rect x="250" y="60" width="12" height="60" rx="6"/></g>`
+],[
+()=>bg(...W3)+`<g data-h="face" filter="url(#sh)"><circle cx="160" cy="104" r="76" fill="url(#br)"/><circle cx="160" cy="104" r="68" fill="#e6dcc0"/><circle cx="160" cy="104" r="60" fill="none" stroke="#2a2118" stroke-width="3" stroke-dasharray="1.5 29.6"/>${Array.from({length:12},(_,i)=>{const a=i*Math.PI/6;return `<text x="${160+50*Math.sin(a)}" y="${108-50*Math.cos(a)}" font-size="11" text-anchor="middle" fill="#2a1d08">${['XII','I','II','III','IIII','V','VI','VII','VIII','IX','X','XI'][i]}</text>`}).join('')}${hd(160,104,0,34,4)}${hd(160,104,0,54,2.5)}<circle cx="160" cy="104" r="4" fill="#15110d"/></g>${f.run?'<text x="160" y="196" font-size="11" text-anchor="middle" fill="#ffd36b" class="pp" pointer-events="none">始まりの数を、時の流れに逆らい読め</text>':''}`,
+()=>bg(...W3)+`<rect x="20" y="30" width="280" height="170" fill="#0c0807" opacity=".7"/><g filter="url(#sh)">${GE(80,104,40,f.run?'sp':'')}${GE(152,146,28,f.run?'sq':'')}${GE(210,92,32,f.run?'sq':'')}${f.run?GE(252,160,26,'sp'):''}</g><g data-h="axle"><circle cx="252" cy="160" r="${f.run?30:26}" fill="${f.run?'none':'#ffffff10'}" stroke="#b8892f" stroke-width="2" stroke-dasharray="4 4"/><circle cx="252" cy="160" r="6" fill="${f.oil?'#d9b25a':'#6a3a1a'}"/></g>`,
+()=>bg(...W3)+`<g filter="url(#sh)">${WD(30,150,260,12)}${WD(40,162,12,44)}${WD(268,162,12,44)}</g>${f.g?'':`<g data-h="gbox" filter="url(#sh)">${WD(70,120,64,30)}<rect x="70" y="132" width="64" height="3" fill="url(#br)"/>${BR(102,138,3.5)}</g>`}${f.oc?'':`<g data-h="oilc" filter="url(#sh)"><path d="M190 150v-22h26v22z" fill="#8a949a"/><path d="M216 134h22l6-10" stroke="#8a949a" stroke-width="4" fill="none"/><rect x="194" y="132" width="3" height="14" fill="#fff" opacity=".4"/></g>`}<g filter="url(#sh)">${GL(160,52,60,.5)}<path d="M150 20h20l4 14h-28z" fill="#6a4914"/><rect x="152" y="34" width="16" height="22" fill="#ffd36b" opacity=".85"/></g>`,
+()=>bg(...W3)+`<path d="M100 206V96q0-52 60-52t60 52v110z" fill="url(#sk)" opacity=".9"/>${DR(112,52,96,154,`<circle cx="160" cy="100" r="16" fill="none" stroke="url(#br)" stroke-width="5"/><rect x="132" y="128" width="56" height="22" rx="3" fill="#15131a" stroke="url(#br)" stroke-width="2"/>${[0,1,2,3].map(i=>`<circle cx="${141+i*13}" cy="139" r="4" fill="#d9b25a"/>`).join('')}`)}`
+]];
+const svg=s=>`<svg viewBox="0 0 320 250" xmlns="http://www.w3.org/2000/svg">${DF}${s}<rect width="320" height="250" fill="url(#vg)" style="pointer-events:none"/><rect width="320" height="250" filter="url(#g2)" style="pointer-events:none"/></svg>`;
+function draw(){$('#sc').innerHTML=svg(R[rm][wall]());$('#sc').classList.toggle('use',!!sel);$('#wl').textContent=sel?IT[sel][0]+IT[sel][1]+'を使う→対象をタップ':NM[rm]+'・'+DR_[wall]+'の壁';
+$('#inv').innerHTML=[0,1,2,3,4,5].map(i=>{const k=inv[i];return k?`<button class="sl${sel==k?' on':''}${k==last?' new':''}" data-i="${k}"><span>${IT[k][0]}</span>${IT[k][1]}</button>`:'<button class="sl" disabled></button>'}).join('')}
+function go(d){wall=(wall+d+4)%4;const e=$('#sc');e.style.opacity=0;setTimeout(()=>{draw();e.style.opacity=1},130)}
+const get=k=>{inv.push(k);last=k;setTimeout(()=>last=null,800)};
+const use=k=>{inv=inv.filter(x=>x!=k);sel=null};
+const bad=u=>say(`「${IT[u][1]}」は、ここでは使えないようだ。`);
+const UH=['door','box1','scope','axle'];
+function act(h){
+const u=sel;
+if(u&&!UH.includes(h))return bad(u);
+switch(h){
+case'clock':return say('壁掛け時計。針は止まっている。');
+case'door':
+if(rm==0){if(u=='medal'){sel=null;draw();return opn()}return u?bad(u):say('重い扉。中央に三日月形のくぼみがある。')}
+if(u)return bad(u);
+return keypad(rm==1?'d2':'z');
+case'shelf':return say('古書の背表紙には、一冊ずつ番号が振られている。');
+case'box1':if(f.bx)return say('小箱は空だ。');if(u=='key'){f.bx=1;use('key');get('medal');draw();return say('小箱が開いた。三日月の刻まれたメダルが入っていた。')}return u?bad(u):say('小さな鍵穴のついた小箱。');
+case'art':return say('月夜の洋館を描いた油絵。窓には明かりが灯っている。');
+case'win':return say('窓の外は月夜。夜空に星が瞬いている。');
+case'fire':if(!f.letter){f.letter=1;get('letter');draw();return say('燃え残りの中から、焦げた手紙を見つけた。')}return say('暖炉の薪が、静かに燃えている。');
+case'dw':return f.dw?say('引き出しは空っぽだ。'):keypad('desk');
+case'globe':return say('古い地球儀。見知らぬ国の名前ばかりだ。');
+case'lamp':return say('緑のシェードのランプ。');
+case'scope':
+if(!f.pw){if(u=='medal'){f.pw=1;use('medal');draw();return say('メダルをくぼみにはめると、望遠鏡の内部で歯車が回り始めた。')}return u?bad(u):say('巨大な望遠鏡。台座に三日月形のくぼみがある。')}
+if(!f.rd){if(u=='lens'){f.rd=1;use('lens');draw();return say('レンズをはめて覗くと、月面に数字が刻まれていた。\n『8191』')}return u?bad(u):say('レンズが外れている。何も見えない。')}
+return say('月面に『8191』と刻まれている。');
+case'chart':return say('星図の下に、二つの数列が書かれている。\n2 4 8 16 ?\n1 4 9 16 ?\n「二つの答えを、並べよ」');
+case'desk2':return f.cab?say('引き出しは空っぽだ。'):keypad('cab');
+case'face':return say(f.run?'文字盤に文字が浮かんでいる。\n「始まりの数を、時の流れに逆らい読め」':'止まった大時計。針はぴくりとも動かない。');
+case'axle':
+if(f.run)return say('歯車が力強く回っている。');
+if(u=='oil'){f.oil=1;use('oil');draw();return say('錆びついた軸に、油をさした。')}
+if(u=='gear')return f.oil?(f.run=1,use('gear'),draw(),say('歯車がはまり、塔全体が低く唸りだした。\n大時計の文字盤に何かが浮かんでいる。')):say('軸が錆びついて、歯車が入らない。');
+return u?bad(u):say('歯車が一つ欠けている。軸は錆びついているようだ。');
+case'gbox':f.g=1;get('gear');draw();return say('木箱の中に、真鍮の歯車があった。');
+case'oilc':f.oc=1;get('oil');draw();return say('棚の上に、油差しがあった。');}}
+function ov(h){const o=$('#ov');o.innerHTML=`<div class="card">${h}</div>`;o.classList.add('on')}
+const off=()=>$('#ov').classList.remove('on');
+function keypad(k){kk=k;code=[0,0,0,0];ov(`<p>${P[k]}</p><div id="dg">${code.map((c,i)=>`<button class="dg" data-d="${i}">${c}</button>`).join('')}</div><button class="bt" data-a="ok">開ける</button><button class="bt g" data-a="no">閉じる</button><p id="kp" style="min-height:1.9em;color:#a89cb4;font-size:13px"></p>`)}
+function title(){ov(`<h1>月影館</h1><p>月夜の晩、古い洋館に迷い込んだ。<br>背後で扉が閉まり、錠が下りる音がした。<br>館の三つの部屋を抜け、脱出せよ。</p><small>画面をタップして調べる／左右ボタンかスワイプで壁を移動<br>アイテムは選ぶと光る場所が教えてくれる</small><button class="bt" data-a="start">はじめる</button>`)}
+function start(){wall=0;rm=0;inv=[];sel=null;f={};hn=0;t0=Date.now();clearInterval(tick);tick=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);$('#tm').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')},1000);off();$('#sc').className='';draw();say('書斎に閉じ込められた。北の壁には重い扉と、壁掛け時計がある。')}
+function solve(k){if(k=='desk'){f.dw=1;get('key');draw();say('引き出しが開いた。小さな真鍮の鍵が入っていた。')}else if(k=='cab'){f.cab=1;get('lens');get('memo');draw();say('引き出しが開いた。大きなレンズと、走り書きが入っていた。')}else opn(k)}
+function opn(k){$('#sc').classList.add('op');say(k=='z'?'錠が外れ、最後の扉がゆっくりと開いていく…':'扉がきしみながら開いていく…');setTimeout(()=>{if(k=='z')return clear();$('#sc').classList.remove('op');rm++;wall=0;sel=null;const e=$('#sc');e.style.opacity=0;setTimeout(()=>{draw();e.style.opacity=1;say(RI[rm])},200)},1500)}
+function clear(){clearInterval(tick);const s=Math.floor((Date.now()-t0)/1000),r=hn==0&&s<900?'S':hn<4?'A':'B';
+ov(`<h1>脱出成功</h1><p>扉の向こうから、冷たい夜風が吹き込んだ。<br>月影館は、静かに遠ざかっていく。</p><p style="color:var(--gold)">タイム ${Math.floor(s/60)}分${s%60}秒　ヒント ${hn}回<br>ランク ${r}</p><button class="bt" data-a="start">もう一度</button>`)}
+$('#ov').onclick=e=>{const t=e.target.closest('button');if(!t)return;
+if(t.dataset.d!=null){const i=+t.dataset.d;code[i]=(code[i]+1)%10;t.textContent=code[i]}
+const a=t.dataset.a;if(a=='start')start();if(a=='no')off();
+if(a=='ok'){if(code.join('')==K[kk]){off();solve(kk)}else{$('#dg').classList.remove('sh');$('#dg').offsetHeight;$('#dg').classList.add('sh');$('#kp').textContent='カチリとも言わない。数字が違うようだ。'}}};
+$('#sc').onclick=e=>{const h=e.target.closest('[data-h]');h?act(h.dataset.h):say('特に気になるものはない。')};
+$('#inv').onclick=e=>{const b=e.target.closest('[data-i]');if(!b)return;const k=b.dataset.i;sel=sel==k?null:k;draw();say(sel?IT[k][1]+'を選んだ。\n'+IT[k][2]:'選択を解除した。')};
+document.querySelectorAll('nav [data-g]').forEach(b=>b.onclick=()=>go(+b.dataset.g));
+let sx=0;const sc=$('#sc');sc.addEventListener('touchstart',e=>sx=e.touches[0].clientX,{passive:true});
+sc.addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-sx;if(Math.abs(d)>50)go(d<0?1:-1)});
+$('#hint').onclick=()=>{hn++;say('💡 '+(rm==0?(!f.letter?'暖炉を調べよう。':!f.dw?'星・短針・薪・欠番を数える。欠番は本棚の背表紙の番号が飛んでいる所。':!f.bx?'机から出た鍵を、本棚の小箱に使おう。':'月のメダルを、北の扉のくぼみへ。'):rm==1?(!f.pw?'メダルを、望遠鏡の台座へ。':!f.cab?'星図の二つの数列を解いて、机の錠へ。':!f.rd?'机のレンズを、望遠鏡へ。':'像は逆さま。180度回して読もう。'):(!f.g?'棚の木箱を調べよう。':!f.oil?'錆びた軸には油が要る。工具棚を探そう。':!f.run?'軸に油をさしてから歯車を。':'書斎の机の数(7436)を、逆から読む。')))};
+start();title();
+</script></body></html>
