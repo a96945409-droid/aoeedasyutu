@@ -59,6 +59,47 @@ h1{margin:0 0 10px;font:34px "Special Elite","DotGothic16",serif;color:var(--blo
 #go{margin-top:14px;padding:12px 44px;font:inherit;font-size:18px;border:0;border-radius:6px;background:var(--blood);color:#fff;cursor:pointer}
 #rot{display:none;position:fixed;inset:0;z-index:9;align-items:center;justify-content:center;background:#05060c;font-size:20px;text-align:center}
 @media(orientation:portrait) and (pointer:coarse){#rot{display:flex}}
+/* タッチ操作をブラウザーの拡大・選択に使わせない */
+html,
+body,
+canvas,
+#tc,
+.tb {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#ov,
+#go {
+  touch-action: manipulation;
+}
+
+#go {
+  position: relative;
+  z-index: 1;
+  min-height: 48px;
+}
+
+/* スマホではPC用操作説明を隠す */
+body.touch #ov p:nth-of-type(2) {
+  display: none;
+}
+
+/* PCではスマホ用操作説明を隠す */
+body:not(.touch) #ov p:nth-of-type(3) {
+  display: none;
+}
+
+/* タッチ端末の縦画面では横向きを案内 */
+@media (orientation: portrait) {
+  body.touch #rot {
+    display: flex;
+  }
+}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script></head><body>
 <canvas id="g"></canvas><div id="bl" class="f"></div><div id="dm" class="f"></div><div id="fl" class="f"></div><div id="sc" class="f"></div><div id="ch" class="f"></div><div id="hm" class="f">✕</div>
@@ -74,7 +115,13 @@ h1{margin:0 0 10px;font:34px "Special Elite","DotGothic16",serif;color:var(--blo
 <p id="ovt"></p><button id="go">スタート</button></div></div>
 <script>
 const $=i=>document.getElementById(i),R=Math.random,H=Math.hypot,A2=Math.atan2,PI=Math.PI,rr=(a,b)=>a+R()*(b-a),cl=(v,a,b)=>v<a?a:v>b?b:v,ri=n=>R()*n|0,lr=(a,b,t)=>a+(b-a)*t;
-const COARSE=matchMedia('(pointer:coarse)').matches;if(COARSE)document.body.classList.add('touch');
+const COARSE =
+  matchMedia('(pointer:coarse)').matches ||
+  matchMedia('(any-pointer:coarse)').matches ||
+  navigator.maxTouchPoints > 0;
+
+if (COARSE) document.body.classList.add('touch');
+
 const RN=new THREE.WebGLRenderer({canvas:$('g'),antialias:!COARSE});
 RN.outputEncoding=THREE.sRGBEncoding;RN.toneMapping=THREE.ACESFilmicToneMapping;RN.toneMappingExposure=1.3;RN.shadowMap.enabled=true;RN.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(75,1,.04,400);cam.rotation.order='YXZ';scene.add(cam);
@@ -484,5 +531,95 @@ let last=0;
 function loop(ts){requestAnimationFrame(loop);const dt=last?Math.min(.05,Math.max(0,(ts-last)/1000)):1/60;last=ts;if(document.hidden)return;
  if(go)step(dt);music();vmu();view();RN.render(scene,cam)}
 requestAnimationFrame(loop);
+/* ===== スマホ操作の補強：ゲームのルールは変更しない ===== */
+(function () {
+  const startButton = document.getElementById('go');
+  const overlay = document.getElementById('ov');
+
+  let startTouch = null;
+
+  /* スタート・再開・もう一度を、タッチでも確実に実行する */
+  startButton.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) {
+      startTouch = null;
+      return;
+    }
+
+    const t = e.changedTouches[0];
+    startTouch = {
+      id: t.identifier,
+      x: t.clientX,
+      y: t.clientY
+    };
+  }, { passive: true });
+
+  startButton.addEventListener('touchend', function (e) {
+    if (!startTouch) return;
+
+    const t = Array.from(e.changedTouches).find(
+      touch => touch.identifier === startTouch.id
+    );
+    if (!t) return;
+
+    const moved = Math.hypot(
+      t.clientX - startTouch.x,
+      t.clientY - startTouch.y
+    );
+
+    startTouch = null;
+
+    /* 後から発生する通常のクリックとの二重実行を防止 */
+    if (e.cancelable) e.preventDefault();
+
+    if (moved > 24) return;
+
+    /* 元のスタート処理をそのまま使用 */
+    startButton.click();
+  }, { passive: false });
+
+  startButton.addEventListener('touchcancel', function () {
+    startTouch = null;
+  }, { passive: true });
+
+  /*
+   * プレイ画面では、タッチをゲームだけに使う。
+   * Pointer Eventsによる移動・照準・発砲はそのまま。
+   * メニューは1本指操作のみ許可する。
+   */
+  function blockBrowserTouch(e) {
+    const inMenu =
+      overlay.style.display !== 'none' &&
+      overlay.contains(e.target);
+
+    if (!inMenu || e.touches.length > 1) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }
+
+  document.addEventListener(
+    'touchstart',
+    blockBrowserTouch,
+    { passive: false, capture: true }
+  );
+
+  document.addEventListener(
+    'touchmove',
+    blockBrowserTouch,
+    { passive: false, capture: true }
+  );
+
+  /* iPhone / iPad のピンチジェスチャーを抑制 */
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (name) {
+    document.addEventListener(name, function (e) {
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false, capture: true });
+  });
+
+  /* 長押しメニューを抑制 */
+  document.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+  }, { capture: true });
+})();
+
 </script>
 </body></html>
